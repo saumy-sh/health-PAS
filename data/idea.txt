@@ -1,0 +1,48 @@
+Recipe + ingredients order
+you first type dish to make. a web searcher gets the recipe for it and the ingredients required for it. then you 
+basically open your camera and scan your surrounding where you keep your cooking items.
+and the agent scans and tells which items are there. the ones not there,agent asks to order them for you.
+the agent can then order them for you.
+
+
+
+final workflow pre-auth insurance:
+User Uploads Medical Documents
+        |
+        v
+Document Intelligence Agent
+(OCR + medical entity extraction)
+        |
+        v
+Policy Query Requirement Checker
+(verify insurer + ICD10 + CPT present)
+        |
+        v
+Policy Retrieval Agent
+(RAG over insurer policies)
+        |
+        v
+Document Requirement Checker
+(find missing required docs)
+        |
+        v
+Eligibility / Policy Reasoning Agent
+        |
+        v
+Prior Authorization Form Generator
+        |
+        v
+Portal Automation Agent
+(submit authorization)
+        |
+        v
+Claim Status Tracker
+        |
+        v
+Appeal Agent (if rejected)
+
+tasks
+ - create fake data [done]
+ - make the pipeline 
+ - make fake insurance duplicate site
+ - deploy

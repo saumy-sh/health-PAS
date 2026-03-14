@@ -1,0 +1,51 @@
+# ==========================================
+# PRIOR AUTHORIZATION DATA OBJECT (PADO)
+# ==========================================
+
+patient_record:
+  patient_info:
+    patient_id: "PT-88293"
+    name: "John R. Doe"
+    dob: "1985-05-12"
+    insurance_provider: "BlueCross BlueShield"
+    policy_id: "BCBS-99001122"
+
+  # THE DOCTOR (Ordering Provider)
+  provider_info:
+    doctor_name: "Dr. Sarah Jenkins"
+    specialty: "Orthopedic Surgery"
+    npi_number: "1928374655"        # Required for all US claims
+    tax_id: "99-1234567"
+    contact:
+      phone: "555-010-8899"
+      fax: "555-010-8800"          # Real PA processes still use Fax!
+      email: "s.jenkins@metrogeneral.org"
+    address: "Medical Plaza Suite 400, Boston, MA 02118"
+
+  # THE HOSPITAL (Rendering Facility)
+  facility_info:
+    facility_name: "Metropolitan General Hospital"
+    facility_npi: "1029384756"
+    facility_type: "Inpatient/Outpatient Hospital"
+    network_status: "In-Network"    # AI must verify this
+    address: "456 Medical Plaza, Boston, MA 02118"
+    place_of_service_code: "22"      # 22 = On Campus-Outpatient Hospital
+
+  clinical_encounter:
+    date: "2024-03-10"
+    chief_complaint: "Severe radiating lower back pain (sciatica) for 7 weeks."
+    diagnosis:
+      primary: "Lumbar Radiculopathy"
+      icd_10_code: "M54.16"
+    requested_procedure:
+      procedure_name: "MRI Lumbar Spine without Contrast"
+      cpt_code: "72148"
+      urgency: "Standard"            # Options: Standard or Expedited
+
+  prior_treatments_tried:
+    - treatment: "NSAIDs (Ibuprofen)"
+      duration: "4 weeks"
+      outcome: "Minimal relief"
+    - treatment: "Physical Therapy"
+      duration: "3 weeks"
+      outcome: "Symptoms persisted"
