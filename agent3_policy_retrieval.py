@@ -2,10 +2,12 @@
 agent3_policy_retrieval.py
 ───────────────────────────
 Agent 3 — Policy Retrieval Agent
-• Uses Nova Lite's medical/insurance knowledge to determine
+• Uses Nova Lite's built-in medical/insurance knowledge to determine
   prior-authorization requirements for a given insurer + ICD-10 + CPT
-• Now includes the full document list from Agent 1 for richer context
-• Returns required documents WITH the suggested document type that should contain each
+• Factors in urgency level (routine / urgent / emergent) when determining
+  approval timelines and submission paths (YAML: policy_requirement_agent)
+• No RAG / vector store needed — Nova Lite reasons directly from its
+  training knowledge of standard insurer policies
 
 Input  : dict from Agent 2
 Output : dict  { "authorization_required": bool, "policy_analysis": {...}, ... }
@@ -30,34 +32,24 @@ SYSTEM_PROMPT = [
             "specialist referral rules, imaging guidelines, and appeals processes for every "
             "common procedure and diagnosis combination. "
             "Be specific, thorough, and clinically precise. "
+            "Never guess — if a criterion is typically required by this insurer for this procedure, state it. "
             "Return ONLY a valid JSON object — no markdown, no preamble."
         )
     }
 ]
 
 
-def _build_doc_summary(documents: list) -> str:
-    """Build a readable summary of documents available."""
-    if not documents:
-        return "No documents available."
-    lines = []
-    for doc in documents:
-        dtype   = doc.get("document_type", "Unknown")
-        content = doc.get("content", {})
-        keys    = list(content.keys())
-        lines.append(f"  - {dtype}: contains {keys}")
-    return "\n".join(lines)
-
-
 def _build_prompt(data: dict) -> str:
-    doc_summary = _build_doc_summary(data.get("documents", []))
-
-    # Build a clear summary of which document types are confirmed present
-    docs_present = data.get("documents_present", {})
-    present_list  = [k for k, v in docs_present.items() if v]
-    absent_list   = [k for k, v in docs_present.items() if not v]
+    urgency = data.get("urgency", "routine")
+    urgency_note = (
+        "This is an EXPEDITED / URGENT review request — apply accelerated timelines."
+        if urgency in ("urgent", "emergent")
+        else "This is a routine prior authorization request."
+    )
 
     return f"""You are reviewing a prior-authorization request. Perform a THOROUGH policy analysis.
+
+URGENCY: {urgency.upper()} — {urgency_note}
 
 CLAIM DETAILS:
 - Insurer              : {data.get('insurer')}
@@ -79,35 +71,42 @@ CLAIM DETAILS:
 - Lab Results          : {json.dumps(data.get('lab_results', {}))}
 - Estimated Cost       : ${data.get('total_estimated_cost')}
 
-DOCUMENTS CONFIRMED PRESENT (already in hand — do NOT list these as missing):
-{json.dumps(present_list, indent=2)}
+Analyze this claim against {data.get('insurer')} standard policies for
+CPT {data.get('cpt')}.
 
-DOCUMENTS NOT YET PROVIDED:
-{json.dumps(absent_list, indent=2)}
+For EACH of the following areas, reason carefully using what you know about
+this insurer's policies for this specific procedure + diagnosis combination:
 
-DOCUMENT CONTENT DETAIL:
-{doc_summary}
+1. STEP THERAPY — Has the patient gone through required conservative treatment steps
+   in the correct order and for sufficient duration? What exactly is required?
 
-CRITICAL INSTRUCTION FOR required_documents AND missing_documents:
-Before marking any document as missing, check the DOCUMENTS CONFIRMED PRESENT list above.
-- "doctor_notes" / "Doctor Notes" covers: Clinical Notes, Office Visit Notes, Physician Notes,
-  Procedure Template, Clinical Findings, Treatment History.
-- "pretreatment_estimate" covers: Cost Estimate, Service Estimate, Billing Estimate,
-  CPT Code List, Procedure Order.
-- "insurance_card" covers: Insurance Information, Member Card, Policy Details.
-- "patient_info" covers: Patient Demographics, Patient Registration.
-- "lab_report" covers: Laboratory Results, Diagnostic Results, Blood Work.
-- "prior_treatment_documentation" is confirmed present if "doctor_notes" is present
-  and prior treatments are documented in it.
-Only mark a document as missing if NO confirmed-present document can cover it.
+2. SYMPTOM DURATION — Is the documented duration sufficient? What is the minimum
+   this insurer typically requires for this procedure?
 
-Analyze this claim against {data.get('insurer')} standard policies for CPT {data.get('cpt')}.
+3. CLINICAL EXAM FINDINGS — Are the documented findings sufficient to support
+   medical necessity? What specific findings does this insurer require?
 
-For the required_documents field, each entry must include:
-- "document_name": the name of the document required
-- "document_type": what type of document this is
-- "info_to_include": what specific information must be present
-- "currently_available": true if a confirmed-present document covers this, false otherwise
+4. SPECIALIST INVOLVEMENT — Is the ordering physician's specialty appropriate?
+   Is a referral from a PCP required first?
+
+5. DOCUMENTATION — List EVERY specific document this insurer requires for this
+   CPT code. Be exhaustive — include forms, notes, test results, letters.
+
+6. IMAGING / PRIOR TESTING — Has any required prior imaging or testing been done
+   before this procedure can be approved?
+
+7. MEDICATION TRIAL — Has the patient trialed required medications (type, dose,
+   duration) before this procedure is approved?
+
+8. UNMET REQUIREMENTS — List EVERY requirement that is NOT yet met based on
+   the claim details provided above.
+
+9. MISSING INFORMATION — List every piece of information that was not provided
+   but is needed to make a complete determination.
+
+10. URGENCY — If urgency is 'urgent' or 'emergent', specify the expedited review
+    timeline this insurer offers, the special submission path, and any additional
+    clinical documentation required to justify the expedited request.
 
 Return a JSON object:
 {{
@@ -138,37 +137,20 @@ Return a JSON object:
   }},
   "criteria_met": [string],
   "criteria_not_met": [string],
-  "required_documents": [
-    {{
-      "document_name": string,
-      "document_type": string,
-      "info_to_include": string,
-      "currently_available": true | false
-    }}
-  ],
-  "missing_documents": [
-    {{
-      "document_name": string,
-      "document_type": string,
-      "info_required": string,
-      "why_needed": string
-    }}
-  ],
-  "missing_information": [
-    {{
-      "info": string,
-      "should_be_in_document": string
-    }}
-  ],
+  "required_documents": [string],
+  "missing_documents": [string],
+  "missing_information": [string],
   "unmet_requirements": [
     {{
       "requirement": string,
       "why_not_met": string,
-      "what_is_needed": string,
-      "document_needed": string
+      "what_is_needed": string
     }}
   ],
   "approval_timeline_days": integer,
+  "expedited_review_available": true | false,
+  "expedited_timeline_days": integer | null,
+  "expedited_submission_path": string | null,
   "validity_period_days": integer,
   "applicable_copay": number,
   "submission_portal": string,
@@ -183,6 +165,17 @@ Return a JSON object:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run(agent2_output: dict) -> dict:
+    """
+    Agent 3 entry point.
+
+    Parameters
+    ----------
+    agent2_output : dict — output from Agent 2
+
+    Returns
+    -------
+    dict with policy requirements and approval likelihood
+    """
     print("\n[Agent 3] Policy Retrieval Agent — START")
 
     data = agent2_output.get("data", agent2_output)
@@ -190,7 +183,7 @@ def run(agent2_output: dict) -> dict:
     print(f"  Insurer   : {data.get('insurer')}")
     print(f"  CPT codes : {data.get('cpt_codes')}")
     print(f"  ICD-10    : {data.get('icd10_codes')}")
-    print(f"  Docs available: {[d.get('document_type') for d in data.get('documents', [])]}")
+    print(f"  Urgency   : {data.get('urgency', 'routine')}")
     print("[Agent 3] Querying Nova Lite for policy requirements...")
 
     prompt   = _build_prompt(data)
@@ -200,7 +193,7 @@ def run(agent2_output: dict) -> dict:
         model_id=LITE_MODEL_ID,
         messages=messages,
         system=SYSTEM_PROMPT,
-        max_tokens=1500,
+        max_tokens=1200,
         temperature=0.1,
     )
 
@@ -216,74 +209,37 @@ def run(agent2_output: dict) -> dict:
         policy_analysis = {
             "authorization_required": True,
             "required_documents": [
-                {
-                    "document_name": "Completed prior authorization request form",
-                    "document_type": "Authorization Form",
-                    "info_to_include": "Patient ID, insurer, CPT, ICD-10, physician NPI",
-                    "currently_available": False,
-                },
-                {
-                    "document_name": "Office visit notes within 60 days",
-                    "document_type": "Clinical Notes",
-                    "info_to_include": "Diagnosis, clinical findings, treatment plan",
-                    "currently_available": True,
-                },
+                "Completed prior authorization request form",
+                "Office visit notes within 60 days",
+                "Documentation of conservative treatment failure",
+                "Referring physician NPI and specialty",
+                "ICD-10 and CPT codes",
+                "Estimated date of service",
             ],
-            "missing_documents": [],
-            "missing_information": [],
-            "unmet_requirements": [],
             "likelihood_of_approval": "medium",
             "policy_notes": "Parse error — standard auth criteria applied.",
             "reasoning": raw,
         }
 
-    # Normalize missing_documents — support both old (list of strings) and new (list of dicts)
-    raw_missing = policy_analysis.get("missing_documents", [])
-    missing_docs_normalized = []
-    for item in raw_missing:
-        if isinstance(item, str):
-            missing_docs_normalized.append({
-                "document_name": item,
-                "document_type": "Unknown",
-                "info_required": "",
-                "why_needed": "",
-            })
-        else:
-            missing_docs_normalized.append(item)
-
-    # Normalize missing_information — support both string list and dict list
-    raw_missing_info = policy_analysis.get("missing_information", [])
-    missing_info_normalized = []
-    for item in raw_missing_info:
-        if isinstance(item, str):
-            missing_info_normalized.append({
-                "info": item,
-                "should_be_in_document": "Unknown",
-            })
-        else:
-            missing_info_normalized.append(item)
-
     output = {
-        "authorization_required": policy_analysis.get("authorization_required", True),
-        "policy_analysis":        policy_analysis,
-        "missing_documents":      missing_docs_normalized,
-        "missing_information":    missing_info_normalized,
-        "unmet_requirements":     policy_analysis.get("unmet_requirements", []),
-        "criteria_not_met":       policy_analysis.get("criteria_not_met", []),
-        "data":                   data,
+        "authorization_required":       policy_analysis.get("authorization_required", True),
+        "policy_analysis":              policy_analysis,
+        "missing_documents":            policy_analysis.get("missing_documents", []),
+        "missing_information":          policy_analysis.get("missing_information", []),
+        "unmet_requirements":           policy_analysis.get("unmet_requirements", []),
+        "criteria_not_met":             policy_analysis.get("criteria_not_met", []),
+        "expedited_review_available":   policy_analysis.get("expedited_review_available", False),
+        "expedited_timeline_days":      policy_analysis.get("expedited_timeline_days"),
+        "data":                         data,
     }
 
-    print(f"  Auth required       : {output['authorization_required']}")
-    print(f"  Approval likelihood : {policy_analysis.get('likelihood_of_approval')}")
-    print(f"  Criteria NOT met    : {policy_analysis.get('criteria_not_met')}")
-    if missing_docs_normalized:
-        print("  Missing documents:")
-        for d in missing_docs_normalized:
-            print(f"    - [{d.get('document_type')}] {d.get('document_name')} — needs: {d.get('info_required')}")
-    if missing_info_normalized:
-        print("  Missing information:")
-        for m in missing_info_normalized:
-            print(f"    - {m.get('info')} → expected in: {m.get('should_be_in_document')}")
+    print(f"  Auth required           : {output['authorization_required']}")
+    print(f"  Approval likelihood     : {policy_analysis.get('likelihood_of_approval')}")
+    print(f"  Required docs           : {policy_analysis.get('required_documents')}")
+    print(f"  Criteria NOT met        : {policy_analysis.get('criteria_not_met')}")
+    print(f"  Expedited available     : {output['expedited_review_available']}")
+    print(f"  Missing documents       : {policy_analysis.get('missing_documents')}")
+    print(f"  Missing information     : {policy_analysis.get('missing_information')}")
     print("[Agent 3] Policy Retrieval Agent — DONE\n")
     return output
 
@@ -302,7 +258,7 @@ if __name__ == "__main__":
             "icd10_codes": ["M54.16"],
             "icd10": "M54.16",
             "procedure": "MRI Lumbar Spine Without Contrast",
-            "cpt_codes": ["72148"],
+            "cpt_codes": ["72148", "72148-26", "99204", "97161"],
             "cpt": "72148",
             "ordering_physician": "Dr. Sarah Jenkins",
             "physician_specialty": "Orthopedic Surgery",
@@ -312,13 +268,8 @@ if __name__ == "__main__":
             "clinical_findings": "Positive SLR at 30 degrees right side. Antalgic gait.",
             "prior_treatments": ["NSAIDs 4 weeks minimal relief", "Physical Therapy 3 weeks"],
             "total_estimated_cost": 2025,
-            "documents": [
-                {"document_type": "Lab Report", "content": {"hba1c": "5.6%"}},
-                {"document_type": "Doctor Notes", "content": {"diagnosis": "Lumbar Radiculopathy"}},
-                {"document_type": "Patient Information Sheet", "content": {"patient_name": "John R. Doe"}},
-                {"document_type": "Insurance Card", "content": {"policy_number": "BCBS-99001122"}},
-                {"document_type": "Pretreatment Estimate", "content": {"total_estimated_cost": 2025}},
-            ],
+            "urgency": "routine",
+            "urgency_justification": "No emergent indicators.",
         }
     }
     result = run(mock_input)

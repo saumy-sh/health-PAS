@@ -5,6 +5,7 @@ Agent 5 — Eligibility / Policy Reasoning Agent
 • Synthesizes all prior agent outputs
 • Makes a comprehensive eligibility determination
 • Produces a structured reasoning chain and approval recommendation
+• Passes urgency forward to Agent 6 for form rendering
 • Uses Nova Pro (complex multi-document reasoning)
 
 Input  : dict from Agent 4
@@ -40,14 +41,15 @@ def _build_prompt(data: dict, policy_analysis: dict, doc_status: dict) -> str:
 Reason through each criterion carefully.
 
 ═══ PATIENT & CLAIM SUMMARY ═══
-Patient           : {data.get('patient_name')}, DOB {data.get('patient_dob')}
-Insurer           : {data.get('insurer')} | Policy: {data.get('policy_number')}
-Diagnosis         : {data.get('diagnosis')} ({data.get('icd10')})
+Patient            : {data.get('patient_name')}, DOB {data.get('patient_dob')}
+Insurer            : {data.get('insurer')} | Policy: {data.get('policy_number')}
+Diagnosis          : {data.get('diagnosis')} ({data.get('icd10')})
 Requested Procedure: {data.get('procedure')} (CPT: {data.get('cpt')})
 Ordering Physician : {data.get('ordering_physician')} — {data.get('physician_specialty')}
 Facility           : {data.get('hospital')}
 Date of Service    : {data.get('date_of_proposed_treatment')}
 Estimated Cost     : ${data.get('total_estimated_cost')}
+Urgency            : {data.get('urgency', 'routine').upper()}
 
 ═══ CLINICAL EVIDENCE ═══
 Chief Complaint    : {data.get('diagnosis')}
@@ -109,6 +111,7 @@ Now perform a full eligibility determination. Return JSON:
   "clinical_summary": string,
   "recommendation": string,
   "urgency": "routine" | "urgent" | "emergent",
+  "expedited_review_requested": true | false,
   "suggested_approval_validity_days": integer,
   "reviewer_notes": string
 }}"""
@@ -135,10 +138,7 @@ def run(agent4_output: dict) -> dict:
     data            = agent4_output.get("data", {})
     policy_analysis = data.get("_raw", {})
 
-    # Pull policy_analysis from Agent 3 if stored, else reconstruct from data
-    # In orchestrator, we pass the full chain; here we accept either shape
     if "policy_analysis" not in data:
-        # Try to get it from the broader context passed in
         policy_analysis = agent4_output.get("policy_analysis", {})
     else:
         policy_analysis = data.get("policy_analysis", {})
@@ -177,27 +177,31 @@ def run(agent4_output: dict) -> dict:
         }
 
     output = {
-        "eligible":        determination.get("eligible"),
-        "determination":   determination.get("determination"),
-        "confidence":      determination.get("confidence"),
-        "criteria_evaluation": determination.get("criteria_evaluation", {}),
-        "criteria_met_count":  determination.get("criteria_met_count"),
-        "criteria_total":      determination.get("criteria_total"),
-        "denial_reasons":      determination.get("denial_reasons", []),
-        "approval_conditions": determination.get("approval_conditions", []),
-        "recommendation":      determination.get("recommendation"),
-        "urgency":             determination.get("urgency", "routine"),
-        "clinical_summary":    determination.get("clinical_summary"),
-        "reviewer_notes":      determination.get("reviewer_notes"),
+        "eligible":                determination.get("eligible"),
+        "determination":           determination.get("determination"),
+        "confidence":              determination.get("confidence"),
+        "criteria_evaluation":     determination.get("criteria_evaluation", {}),
+        "criteria_met_count":      determination.get("criteria_met_count"),
+        "criteria_total":          determination.get("criteria_total"),
+        "denial_reasons":          determination.get("denial_reasons", []),
+        "approval_conditions":     determination.get("approval_conditions", []),
+        "recommendation":          determination.get("recommendation"),
+        # Urgency passed through for Agent 6 form-filling
+        "urgency":                 determination.get("urgency", data.get("urgency", "routine")),
+        "expedited_review_requested": determination.get("expedited_review_requested", False),
+        "clinical_summary":        determination.get("clinical_summary"),
+        "reviewer_notes":          determination.get("reviewer_notes"),
         "suggested_validity_days": determination.get("suggested_approval_validity_days"),
-        "data":            data,
-        "policy_analysis": policy_analysis,
+        "data":                    data,
+        "policy_analysis":         policy_analysis,
     }
 
-    print(f"  Determination : {output['determination']}")
-    print(f"  Eligible      : {output['eligible']}")
-    print(f"  Confidence    : {output['confidence']}")
-    print(f"  Criteria met  : {output['criteria_met_count']}/{output['criteria_total']}")
+    print(f"  Determination          : {output['determination']}")
+    print(f"  Eligible               : {output['eligible']}")
+    print(f"  Confidence             : {output['confidence']}")
+    print(f"  Criteria met           : {output['criteria_met_count']}/{output['criteria_total']}")
+    print(f"  Urgency                : {output['urgency']}")
+    print(f"  Expedited review       : {output['expedited_review_requested']}")
     print("[Agent 5] Eligibility / Policy Reasoning Agent — DONE\n")
     return output
 
@@ -227,6 +231,8 @@ if __name__ == "__main__":
             "total_estimated_cost": 2025,
             "symptom_duration_weeks": 7,
             "pain_score": 7,
+            "urgency": "routine",
+            "urgency_justification": "No emergent indicators.",
             "clinical_findings": "Positive SLR at 30 degrees right side. Antalgic gait.",
             "prior_treatments": ["NSAIDs 4 weeks minimal relief", "PT 3 weeks no improvement"],
             "prescribed_medications": ["Lyrica 75mg bid", "Ibuprofen"],

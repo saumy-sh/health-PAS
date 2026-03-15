@@ -2,14 +2,26 @@
 agent4_document_checker.py
 ───────────────────────────
 Agent 4 — Document Requirement Checker
-• Matches each policy-required document against the actual document list from Agent 1
-• For each gap: says exactly which document type is needed and what info it must contain
+• Uses documents_present from Agent 1 directly (no re-inference)
+• Falls back to field-level inference if running standalone
 • Merges unmet requirements and missing info from Agent 3
-• Hard stop if blockers exist — prints exactly what user must submit AND what doc type to use
+• Tags every document with an importance level for THIS specific claim:
+    CRITICAL   — submission will be rejected without it
+    IMPORTANT  — strongly recommended; increases approval odds
+    OPTIONAL   — helpful context but not required for this case
+    NOT_NEEDED — not applicable to this diagnosis/procedure/insurer
+• Hard stop if blockers exist — prints exactly what user must submit
 • Uses Nova Micro
 
 Input  : dict from Agent 3
-Output : dict  { "all_docs_present": bool, "missing_docs": [...], "can_proceed": bool }
+Output : dict  {
+    "all_docs_present": bool,
+    "missing_docs": [...],
+    "can_proceed": bool,
+    "document_importance": { doc_name: { level, reason, can_skip } },
+    "importance_summary": { critical: [...], important: [...],
+                            optional: [...], not_needed: [...] }
+}
 """
 
 import json
@@ -18,62 +30,81 @@ from bedrock_client import invoke, MICRO_MODEL_ID
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Document inventory — uses Agent 1's document list directly
+# Importance levels
+# ─────────────────────────────────────────────────────────────────────────────
+
+IMPORTANCE_LEVELS = {
+    "CRITICAL":   "❌ CRITICAL   — submission WILL be rejected without this",
+    "IMPORTANT":  "⚠️  IMPORTANT  — strongly recommended; improves approval odds",
+    "OPTIONAL":   "ℹ️  OPTIONAL   — helpful context, but not required for this case",
+    "NOT_NEEDED": "✅ NOT NEEDED  — not applicable to this diagnosis / procedure",
+}
+
+# Static baseline importance per document type — used as a starting hint
+# to the LLM; the LLM can override these based on the actual claim context.
+BASELINE_IMPORTANCE = {
+    "lab_report":                    "OPTIONAL",
+    "doctor_notes":                  "CRITICAL",
+    "patient_info":                  "CRITICAL",
+    "insurance_card":                "CRITICAL",
+    "pretreatment_estimate":         "IMPORTANT",
+    "prior_treatment_documentation": "IMPORTANT",
+    "procedure_order":               "CRITICAL",
+    "physician_referral":            "IMPORTANT",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Document inventory
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _inventory_available_docs(data: dict) -> dict:
     """
-    Returns a dict of:
-      { document_type_string: { keys in content } }
-    Built from Agent 1's documents list.
-    Falls back to documents_present flags if documents list is absent.
+    Use documents_present from Agent 1 if available.
+    Falls back to field-level inference for standalone use.
     """
-    documents = data.get("documents", [])
-    if documents:
-        return {
-            doc.get("document_type", f"Document_{i}"): list(doc.get("content", {}).keys())
-            for i, doc in enumerate(documents)
-        }
+    if "documents_present" in data:
+        return data["documents_present"]
 
-    # Fallback: convert documents_present flags into a simple inventory
-    docs_present = data.get("documents_present", {})
     return {
-        doc_type: ["(present but content unknown)"]
-        for doc_type, present in docs_present.items()
-        if present
+        "lab_report":                    bool(any(v for v in data.get("lab_results", {}).values() if v)),
+        "doctor_notes":                  bool(data.get("clinical_findings") or data.get("diagnosis")),
+        "patient_info":                  bool(data.get("patient_name") and data.get("patient_dob")),
+        "insurance_card":                bool(data.get("insurer") and data.get("policy_number")),
+        "pretreatment_estimate":         bool(data.get("total_estimated_cost")),
+        "prior_treatment_documentation": bool(data.get("prior_treatments") and len(data.get("prior_treatments", [])) > 0),
+        "procedure_order":               bool(data.get("procedure") and data.get("cpt")),
+        "physician_referral":            False,
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Prompts
+# Prompts — gap analysis
 # ─────────────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = [
     {
         "text": (
             "You are a prior-authorization document specialist. "
-            "Compare available documents against policy requirements and identify gaps. "
-            "For each gap, specify exactly what document type is needed and what information "
-            "it must contain. Be precise. "
+            "Compare available documents against policy requirements, identify gaps, "
+            "and assign an importance level to every document for this specific claim. "
+            "Be precise about what is missing and what the user truly needs to submit. "
             "Return ONLY a valid JSON object — no markdown, no preamble."
         )
     }
 ]
 
 
-def _build_prompt(required_docs: list, available_doc_inventory: dict,
-                  policy_notes: str, unmet_requirements: list,
-                  missing_information: list) -> str:
-
+def _build_gap_prompt(required_docs: list, available_docs: dict,
+                      policy_notes: str, unmet_requirements: list,
+                      missing_information: list) -> str:
     return f"""You are checking documentation completeness for a prior-authorization request.
 
 DOCUMENTS REQUIRED BY POLICY:
-(Each entry specifies the document name, type, and what info it must contain)
 {json.dumps(required_docs, indent=2)}
 
-DOCUMENTS WE CURRENTLY HAVE:
-(Document type → list of fields/content available in that document)
-{json.dumps(available_doc_inventory, indent=2)}
+DOCUMENTS WE CURRENTLY HAVE (True = present, False = missing):
+{json.dumps(available_docs, indent=2)}
 
 UNMET CLINICAL REQUIREMENTS (from policy analysis):
 {json.dumps(unmet_requirements, indent=2)}
@@ -84,15 +115,9 @@ MISSING INFORMATION (from policy analysis):
 POLICY NOTES:
 {policy_notes}
 
-Instructions:
-1. For each required document, check if any available document covers it (be flexible —
-   "physician notes" covers "clinical notes", "doctor notes", "procedure template", etc.)
-2. For each gap, specify:
-   - The exact document name required
-   - The document TYPE (e.g. "Clinical Notes", "Lab Report", "Authorization Form")
-   - The specific information that document must contain
-   - Why it is needed for the prior-auth
-3. For each unmet requirement, identify what document the user needs to provide or update.
+For each required document, determine if we have it or an equivalent.
+Be flexible — e.g. "office visit notes" covers "physician notes" or "clinical findings".
+For each unmet requirement, specify exactly what document or information the user must provide.
 
 Return JSON:
 {{
@@ -100,49 +125,133 @@ Return JSON:
     "<required_doc_name>": {{
       "status": "present" | "missing" | "partial",
       "matched_to": string | null,
-      "matched_document_type": string | null,
-      "missing_info": [string],
       "notes": string
     }}
   }},
   "all_docs_present": true | false,
-  "missing_docs": [
-    {{
-      "document_name": string,
-      "document_type": string,
-      "info_required": string,
-      "why_needed": string
-    }}
-  ],
-  "partial_docs": [
-    {{
-      "document_name": string,
-      "document_type": string,
-      "what_is_present": string,
-      "what_is_missing": string
-    }}
-  ],
+  "missing_docs": [string],
+  "partial_docs": [string],
   "present_docs": [string],
-  "blockers": [
-    {{
-      "blocker": string,
-      "document_needed": string,
-      "document_type": string,
-      "info_to_include": string
-    }}
-  ],
+  "blockers": [string],
   "user_action_required": [
     {{
       "item": string,
       "reason": string,
-      "document_to_provide": string,
-      "document_type": string,
-      "info_to_include": string,
       "how_to_resolve": string
     }}
   ],
   "recommendations": [string]
 }}"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Prompts — importance tagging
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_importance_prompt(data: dict, available_docs: dict,
+                              required_docs: list, policy_notes: str) -> str:
+    return f"""You are a prior-authorization specialist assigning importance tags to documents
+for a specific insurance claim. Evaluate each document in the context of THIS claim only.
+
+CLAIM CONTEXT:
+- Insurer          : {data.get('insurer')}
+- Plan Type        : {data.get('plan_type')}
+- Diagnosis        : {data.get('diagnosis')} ({data.get('icd10')})
+- Procedure        : {data.get('procedure')} (CPT {data.get('cpt')})
+- Physician Spec.  : {data.get('physician_specialty')}
+- Prior Treatments : {json.dumps(data.get('prior_treatments', []))}
+- Symptom Duration : {data.get('symptom_duration_weeks')} weeks
+
+DOCUMENTS WE HAVE:
+{json.dumps(available_docs, indent=2)}
+
+DOCUMENTS REQUIRED BY POLICY:
+{json.dumps(required_docs, indent=2)}
+
+POLICY NOTES:
+{policy_notes}
+
+BASELINE IMPORTANCE HINTS (you may override based on context):
+{json.dumps(BASELINE_IMPORTANCE, indent=2)}
+
+For EVERY document key in "DOCUMENTS WE HAVE" AND every document in
+"DOCUMENTS REQUIRED BY POLICY", assign an importance level.
+
+Importance levels — choose exactly one per document:
+  CRITICAL   : The insurer will reject the submission outright without this.
+  IMPORTANT  : Not strictly mandatory, but absence significantly lowers approval
+               odds or will trigger a Request for Additional Information (RAI).
+  OPTIONAL   : Provides supporting context; this insurer/procedure does NOT require
+               it and its absence will NOT delay or prevent approval.
+  NOT_NEEDED : Does not apply to this diagnosis, procedure, or insurer at all —
+               the user should not waste time gathering it.
+
+Return JSON:
+{{
+  "document_importance": {{
+    "<document_name>": {{
+      "importance": "CRITICAL" | "IMPORTANT" | "OPTIONAL" | "NOT_NEEDED",
+      "reason": string,
+      "can_skip": true | false,
+      "present": true | false
+    }}
+  }},
+  "importance_summary": {{
+    "critical":   [string],
+    "important":  [string],
+    "optional":   [string],
+    "not_needed": [string]
+  }},
+  "skip_safe_message": string
+}}"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Importance report printer
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _print_importance_report(output: dict) -> None:
+    """Print a formatted document importance report to the console."""
+    importance = output.get("document_importance", {})
+    skip_msg   = output.get("skip_safe_message", "")
+
+    if not importance:
+        return
+
+    print("\n" + "─" * 70)
+    print("  DOCUMENT IMPORTANCE REPORT")
+    print("─" * 70)
+
+    tier_order = ["CRITICAL", "IMPORTANT", "OPTIONAL", "NOT_NEEDED"]
+    for tier in tier_order:
+        docs_in_tier = [
+            (doc, info) for doc, info in importance.items()
+            if info.get("importance") == tier
+        ]
+        if not docs_in_tier:
+            continue
+
+        print(f"\n  {IMPORTANCE_LEVELS[tier]}")
+        for doc, info in docs_in_tier:
+            present_tag = "✓ have   " if info.get("present") else "✗ missing"
+            skip_tag    = "  [safe to skip]" if info.get("can_skip") else ""
+            print(f"    • {doc:<42} [{present_tag}]{skip_tag}")
+            print(f"      → {info.get('reason', '')}")
+
+    if skip_msg:
+        print(f"\n  ℹ️  WHAT YOU CAN SAFELY SKIP FOR THIS CLAIM:")
+        words = skip_msg.split()
+        line  = "     "
+        for word in words:
+            if len(line) + len(word) + 1 > 70:
+                print(line)
+                line = "     " + word
+            else:
+                line += (" " if line.strip() else "") + word
+        if line.strip():
+            print(line)
+
+    print("─" * 70 + "\n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -160,58 +269,35 @@ def run(agent3_output: dict) -> dict:
     unmet_requirements  = agent3_output.get("unmet_requirements", [])
     missing_information = agent3_output.get("missing_information", [])
 
-    # Normalize required_docs — support both old (list of strings) and new (list of dicts)
-    normalized_required = []
-    for item in required_docs:
-        if isinstance(item, str):
-            normalized_required.append({
-                "document_name":    item,
-                "document_type":    "Unknown",
-                "info_to_include":  "",
-                "currently_available": False,
-            })
-        else:
-            normalized_required.append(item)
-
-    if not normalized_required:
-        normalized_required = [
-            {
-                "document_name":   "Completed prior authorization request form",
-                "document_type":   "Authorization Form",
-                "info_to_include": "Patient ID, insurer, CPT, ICD-10, physician NPI",
-                "currently_available": False,
-            },
-            {
-                "document_name":   "Office visit notes (within 60 days)",
-                "document_type":   "Clinical Notes",
-                "info_to_include": "Diagnosis, clinical findings, treatment history",
-                "currently_available": False,
-            },
-            {
-                "document_name":   "Documentation of conservative treatment failure",
-                "document_type":   "Clinical Notes / Treatment Records",
-                "info_to_include": "Prior treatments tried, duration, outcome",
-                "currently_available": False,
-            },
+    if not required_docs:
+        required_docs = [
+            "Completed prior authorization request form",
+            "Office visit notes (within 60 days)",
+            "Documentation of conservative treatment failure",
+            "Referring physician NPI and specialty",
+            "ICD-10 and CPT codes",
+            "Estimated date of service",
         ]
 
-    print(f"  Required docs ({len(normalized_required)}):")
-    for d in normalized_required:
-        print(f"    [{d.get('document_type')}] {d.get('document_name')}")
+    print(f"  Required docs ({len(required_docs)}): {required_docs}")
 
-    available_inventory = _inventory_available_docs(data)
-    print(f"  Available documents: {list(available_inventory.keys())}")
+    available_docs = _inventory_available_docs(data)
+    present = [k for k, v in available_docs.items() if v]
+    absent  = [k for k, v in available_docs.items() if not v]
+    print(f"  Available docs : {present}")
+    print(f"  Absent docs    : {absent}")
 
-    prompt   = _build_prompt(normalized_required, available_inventory, policy_notes,
-                              unmet_requirements, missing_information)
-    messages = [{"role": "user", "content": [{"text": prompt}]}]
+    # ── Step 1: Gap analysis ─────────────────────────────────────────────────
+    gap_prompt = _build_gap_prompt(required_docs, available_docs, policy_notes,
+                                   unmet_requirements, missing_information)
+    messages = [{"role": "user", "content": [{"text": gap_prompt}]}]
 
     print("[Agent 4] Calling Nova Micro for document gap analysis...")
     raw = invoke(
         model_id=MICRO_MODEL_ID,
         messages=messages,
         system=SYSTEM_PROMPT,
-        max_tokens=1200,
+        max_tokens=1000,
         temperature=0.1,
     )
 
@@ -224,135 +310,129 @@ def run(agent3_output: dict) -> dict:
         doc_analysis = json.loads(text.strip())
     except json.JSONDecodeError:
         doc_analysis = {
-            "all_docs_present":    False,
-            "missing_docs":        [{"document_name": "Parse error — manual review required",
-                                     "document_type": "Unknown", "info_required": "", "why_needed": ""}],
-            "present_docs":        list(available_inventory.keys()),
-            "blockers":            [{"blocker": "Could not parse document analysis",
-                                     "document_needed": "Unknown", "document_type": "Unknown",
-                                     "info_to_include": ""}],
+            "all_docs_present":     False,
+            "missing_docs":         ["Parse error — manual review required"],
+            "present_docs":         present,
+            "blockers":             ["Could not parse document analysis"],
             "user_action_required": [],
         }
 
-    # Normalize blockers — support both string and dict formats
-    raw_blockers = doc_analysis.get("blockers", [])
-    blockers_normalized = []
-    for b in raw_blockers:
-        if isinstance(b, str):
-            blockers_normalized.append({
-                "blocker":        b,
-                "document_needed": "Unknown",
-                "document_type":  "Unknown",
-                "info_to_include": "",
-            })
-        else:
-            blockers_normalized.append(b)
+    # ── Step 2: Importance tagging ───────────────────────────────────────────
+    imp_prompt   = _build_importance_prompt(data, available_docs, required_docs, policy_notes)
+    imp_messages = [{"role": "user", "content": [{"text": imp_prompt}]}]
 
-    # Merge blockers from Agent 3's unmet requirements
-    for u in unmet_requirements:
-        blockers_normalized.append({
-            "blocker":         f"{u.get('requirement')} — {u.get('what_is_needed')}",
-            "document_needed": u.get("document_needed", "Unknown"),
-            "document_type":   "Clinical Documentation",
-            "info_to_include": u.get("what_is_needed", ""),
-        })
+    print("[Agent 4] Calling Nova Micro for document importance tagging...")
+    imp_raw = invoke(
+        model_id=MICRO_MODEL_ID,
+        messages=imp_messages,
+        system=SYSTEM_PROMPT,
+        max_tokens=900,
+        temperature=0.1,
+    )
 
-    # Merge missing information items into blockers
-    for m in missing_information:
-        if isinstance(m, dict):
-            blockers_normalized.append({
-                "blocker":         f"Missing: {m.get('info')}",
-                "document_needed": m.get("should_be_in_document", "Unknown"),
-                "document_type":   m.get("should_be_in_document", "Unknown"),
-                "info_to_include": m.get("info", ""),
-            })
-        else:
-            blockers_normalized.append({
-                "blocker":         f"Missing information: {m}",
-                "document_needed": "Unknown",
-                "document_type":   "Unknown",
-                "info_to_include": str(m),
-            })
+    imp_text = imp_raw.strip()
+    if imp_text.startswith("```"):
+        imp_text = imp_text.split("```")[1]
+        if imp_text.lower().startswith("json"):
+            imp_text = imp_text[4:]
+    try:
+        importance_result = json.loads(imp_text.strip())
+    except json.JSONDecodeError:
+        # Fallback: apply baseline statically
+        importance_result = {
+            "document_importance": {
+                doc: {
+                    "importance": BASELINE_IMPORTANCE.get(doc, "OPTIONAL"),
+                    "reason":     "Baseline importance applied (LLM parse error).",
+                    "can_skip":   BASELINE_IMPORTANCE.get(doc, "OPTIONAL") in ("OPTIONAL", "NOT_NEEDED"),
+                    "present":    available_docs.get(doc, False),
+                }
+                for doc in list(available_docs.keys())
+            },
+            "importance_summary": {
+                "critical":   [k for k, v in BASELINE_IMPORTANCE.items() if v == "CRITICAL"],
+                "important":  [k for k, v in BASELINE_IMPORTANCE.items() if v == "IMPORTANT"],
+                "optional":   [k for k, v in BASELINE_IMPORTANCE.items() if v == "OPTIONAL"],
+                "not_needed": [],
+            },
+            "skip_safe_message": (
+                "Based on standard policy, lab reports are typically optional for imaging "
+                "pre-authorization unless the insurer specifically requests them."
+            ),
+        }
 
-    # Merge missing_docs from Agent 3
-    missing_docs = doc_analysis.get("missing_docs", [])
-    a3_missing   = agent3_output.get("missing_documents", [])
-    for item in a3_missing:
-        if isinstance(item, dict):
-            # Avoid duplicates by document_name
-            existing_names = [d.get("document_name") for d in missing_docs]
-            if item.get("document_name") not in existing_names:
-                missing_docs.append(item)
-        elif isinstance(item, str):
-            existing_names = [d.get("document_name") for d in missing_docs]
-            if item not in existing_names:
-                missing_docs.append({
-                    "document_name": item,
-                    "document_type": "Unknown",
-                    "info_required": "",
-                    "why_needed": "",
-                })
-
+    # ── Assemble output ──────────────────────────────────────────────────────
     output = {
-        "all_docs_present":    doc_analysis.get("all_docs_present", False),
-        "missing_docs":        missing_docs,
-        "partial_docs":        doc_analysis.get("partial_docs", []),
-        "present_docs":        doc_analysis.get("present_docs", []),
-        "blockers":            blockers_normalized,
+        "all_docs_present":     doc_analysis.get("all_docs_present", False),
+        "missing_docs":         doc_analysis.get("missing_docs", []),
+        "partial_docs":         doc_analysis.get("partial_docs", []),
+        "present_docs":         doc_analysis.get("present_docs", []),
+        "blockers":             doc_analysis.get("blockers", []),
         "user_action_required": doc_analysis.get("user_action_required", []),
-        "recommendations":     doc_analysis.get("recommendations", []),
-        "document_status":     doc_analysis.get("document_status", {}),
-        "available_inventory": available_inventory,
-        "missing_information": missing_information,
-        "data":                data,
+        "recommendations":      doc_analysis.get("recommendations", []),
+        "document_status":      doc_analysis.get("document_status", {}),
+        "available_inventory":  available_docs,
+        "missing_information":  missing_information,
+        # ── Importance tagging ───────────────────────────────────────────────
+        "document_importance":  importance_result.get("document_importance", {}),
+        "importance_summary":   importance_result.get("importance_summary", {}),
+        "skip_safe_message":    importance_result.get("skip_safe_message", ""),
+        # ────────────────────────────────────────────────────────────────────
+        "data":                 data,
     }
 
-    print(f"  All docs present : {output['all_docs_present']}")
+    # Merge unmet clinical requirements from Agent 3
+    a3_missing_docs = agent3_output.get("missing_documents", [])
+    if a3_missing_docs:
+        output["missing_docs"] = list(set(output["missing_docs"] + a3_missing_docs))
 
-    # Hard stop output — print clearly what the user must do
+    if unmet_requirements:
+        extra_blockers = [
+            f"{u.get('requirement')} — {u.get('what_is_needed')}"
+            for u in unmet_requirements
+        ]
+        output["blockers"] = list(set(output["blockers"] + extra_blockers))
+
+    if missing_information:
+        output["blockers"] = list(set(
+            output["blockers"] + [f"Missing information: {m}" for m in missing_information]
+        ))
+
+    print(f"  All docs present : {output['all_docs_present']}")
+    print(f"  Missing docs     : {output['missing_docs']}")
+    print(f"  Blockers         : {output['blockers']}")
+
+    # ── Importance report ────────────────────────────────────────────────────
+    _print_importance_report(output)
+
+    # ── Hard stop if blockers ────────────────────────────────────────────────
     if output["blockers"] or output["missing_docs"]:
         print("\n" + "!" * 70)
         print("  ACTION REQUIRED — Cannot proceed with submission")
         print("!" * 70)
-
         if output["missing_docs"]:
             print("\n  Missing Documents — please submit the following:")
             for doc in output["missing_docs"]:
-                if isinstance(doc, dict):
-                    print(f"    * [{doc.get('document_type', 'Unknown')}] {doc.get('document_name')}")
-                    if doc.get("info_required"):
-                        print(f"      Must contain : {doc.get('info_required')}")
-                    if doc.get("why_needed"):
-                        print(f"      Why needed   : {doc.get('why_needed')}")
-                else:
-                    print(f"    * {doc}")
-
+                imp_info = output["document_importance"].get(doc, {})
+                tag      = imp_info.get("importance", "?")
+                print(f"    [{tag}]  {doc}")
+                if imp_info.get("reason"):
+                    print(f"             → {imp_info['reason']}")
         if output["blockers"]:
             print("\n  Blockers — must be resolved before authorization:")
             for b in output["blockers"]:
-                if isinstance(b, dict):
-                    print(f"    [BLOCKER] {b.get('blocker')}")
-                    if b.get("document_needed") and b.get("document_needed") != "Unknown":
-                        print(f"      Document needed : [{b.get('document_type')}] {b.get('document_needed')}")
-                    if b.get("info_to_include"):
-                        print(f"      Must contain    : {b.get('info_to_include')}")
-                else:
-                    print(f"    [BLOCKER] {b}")
-
+                print(f"    [BLOCKER] {b}")
         if output.get("user_action_required"):
             print("\n  Specific Actions Required:")
             for action in output["user_action_required"]:
                 print(f"    > {action.get('item')}")
-                print(f"      Reason          : {action.get('reason')}")
-                if action.get("document_to_provide"):
-                    print(f"      Provide document: [{action.get('document_type')}] {action.get('document_to_provide')}")
-                    if action.get("info_to_include"):
-                        print(f"      Must contain    : {action.get('info_to_include')}")
-                print(f"      How to fix      : {action.get('how_to_resolve')}")
-
+                print(f"      Reason     : {action.get('reason')}")
+                print(f"      How to fix : {action.get('how_to_resolve')}")
         print("!" * 70 + "\n")
 
-    output["can_proceed"] = len(output["blockers"]) == 0 and len(output["missing_docs"]) == 0
+    output["can_proceed"] = (
+        len(output["blockers"]) == 0 and len(output["missing_docs"]) == 0
+    )
 
     print(f"  Can proceed      : {output['can_proceed']}")
     print("[Agent 4] Document Requirement Checker — DONE\n")
@@ -366,70 +446,48 @@ def run(agent3_output: dict) -> dict:
 if __name__ == "__main__":
     mock_input = {
         "data": {
-            "patient_name": "John R. Doe",
-            "patient_dob": "1985-05-12",
-            "diagnosis": "Lumbar Radiculopathy",
-            "icd10_codes": ["M54.16"],
-            "cpt": "72148",
-            "ordering_physician": "Dr. Sarah Jenkins",
-            "prior_treatments": ["NSAIDs 4 weeks", "PT 3 weeks"],
-            "total_estimated_cost": 2025,
-            "clinical_findings": "Positive SLR at 30 degrees",
-            "documents": [
-                {
-                    "document_type": "Lab Report",
-                    "content": {"patient_name": "John R. Doe", "hba1c": "5.6%", "creatinine": "0.95"}
-                },
-                {
-                    "document_type": "Doctor Notes / Procedure Template",
-                    "content": {
-                        "diagnosis": "Lumbar Radiculopathy",
-                        "icd10_codes": ["M54.16"],
-                        "cpt_codes": ["72148"],
-                        "clinical_findings": "Positive SLR at 30 degrees",
-                        "prior_treatments": ["NSAIDs 4 weeks", "PT 3 weeks"],
-                    }
-                },
-                {
-                    "document_type": "Patient Information Sheet",
-                    "content": {"patient_name": "John R. Doe", "dob": "1985-05-12", "insurance": "BCBS"}
-                },
-                {
-                    "document_type": "Insurance Card",
-                    "content": {"policy_number": "BCBS-99001122", "member_id": "BCBS-9900122"}
-                },
-                {
-                    "document_type": "Medical Pretreatment Estimate",
-                    "content": {"total_estimated_cost": 2025, "cpt_codes": ["72148", "72148-26"]}
-                },
-            ],
+            "patient_name":          "John R. Doe",
+            "patient_dob":           "1985-05-12",
+            "insurer":               "BlueCross BlueShield",
+            "plan_type":             "PPO",
+            "diagnosis":             "Lumbar Radiculopathy",
+            "icd10":                 "M54.16",
+            "icd10_codes":           ["M54.16"],
+            "procedure":             "MRI Lumbar Spine Without Contrast",
+            "cpt":                   "72148",
+            "ordering_physician":    "Dr. Sarah Jenkins",
+            "physician_specialty":   "Orthopedic Surgery",
+            "prior_treatments":      ["NSAIDs 4 weeks", "PT 3 weeks"],
+            "symptom_duration_weeks": 7,
+            "total_estimated_cost":  2025,
+            "clinical_findings":     "Positive SLR at 30 degrees",
+            "lab_results":           {"hba1c": "5.6%"},
+            "documents_present": {
+                "lab_report":                    True,
+                "doctor_notes":                  True,
+                "patient_info":                  True,
+                "insurance_card":                True,
+                "pretreatment_estimate":         True,
+                "prior_treatment_documentation": True,
+                "procedure_order":               True,
+                "physician_referral":            False,
+            },
         },
         "policy_analysis": {
             "required_documents": [
-                {
-                    "document_name": "Completed prior authorization request form",
-                    "document_type": "Authorization Form",
-                    "info_to_include": "Patient ID, insurer, CPT, ICD-10, physician NPI",
-                    "currently_available": False,
-                },
-                {
-                    "document_name": "Office visit notes within 60 days",
-                    "document_type": "Clinical Notes",
-                    "info_to_include": "Diagnosis, clinical findings, treatment plan",
-                    "currently_available": True,
-                },
-                {
-                    "document_name": "Documentation of conservative treatment failure",
-                    "document_type": "Clinical Notes / Treatment Records",
-                    "info_to_include": "Prior treatments tried, duration, outcome",
-                    "currently_available": True,
-                },
+                "Completed prior authorization request form",
+                "Office visit notes within 60 days",
+                "Documentation of conservative treatment failure",
+                "Referring physician NPI and specialty",
+                "ICD-10 and CPT codes",
+                "Estimated date of service",
             ],
             "policy_notes": "Standard BCBS prior auth for MRI Lumbar Spine.",
         },
-        "unmet_requirements": [],
-        "missing_documents": [],
+        "unmet_requirements":  [],
+        "missing_documents":   [],
         "missing_information": [],
     }
     result = run(mock_input)
-    print(json.dumps({k: v for k, v in result.items() if k != "data"}, indent=2))
+    display = {k: v for k, v in result.items() if k != "data"}
+    print(json.dumps(display, indent=2, default=str))

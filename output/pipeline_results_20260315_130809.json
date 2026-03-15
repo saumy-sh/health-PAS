@@ -1,0 +1,417 @@
+{
+  "agent1": {
+    "patient_name": "John R. Doe",
+    "patient_dob": "1985-05-12",
+    "patient_mrn": "PT-88293",
+    "patient_gender": "Male",
+    "patient_address": "12 Maple St, Boston, MA 02118",
+    "patient_phone": "(555) 123-4567",
+    "patient_email": "j.doe85@example.com",
+    "emergency_contact": "Jane Doe",
+    "insurer": "BlueCross BlueShield",
+    "plan_type": "BlueCross Massachusetts",
+    "policy_number": "BCBS-99001122",
+    "group_number": "1029384756",
+    "member_id": "BCBS-99001122",
+    "copay_specialist": 50,
+    "diagnosis": "Lumbar Radiculopathy",
+    "icd10_codes": [
+      "M54.16"
+    ],
+    "icd10": "M54.16",
+    "procedure": "MRI Lumbar Spine without Contrast",
+    "cpt_codes": [
+      "72148"
+    ],
+    "cpt": "72148",
+    "ordering_physician": "Dr. Sarah Jenkins",
+    "physician_specialty": "Orthopedic Surgery",
+    "physician_phone": "555-010-8899",
+    "prior_treatments": [
+      "NSAIDs (ibuprofen) - 4 weeks",
+      "Minimal relief",
+      "Physical Therapy - 3 weeks - Symptoms persisted"
+    ],
+    "clinical_findings": "Positive straight leg raise on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+    "symptom_duration_weeks": 7,
+    "pain_score": 99,
+    "urgency": "urgent",
+    "urgency_justification": "Severe radicular pain for 7 weeks, failed conservative treatment, clinical suspicion of lumbar radiculopathy",
+    "hospital": "Metropolitan General Hospital",
+    "hospital_address": "456 Main St, Boston, MA 02118",
+    "date_of_service": "2024-03-10",
+    "date_of_proposed_treatment": "2024-03-15",
+    "total_estimated_cost": 2025,
+    "cost_line_items": [
+      {
+        "description": "MRI Lumbar Spine Without Contrast",
+        "cpt_code": "72148",
+        "estimated_price": 1350
+      },
+      {
+        "description": "Radiologist Interpretation & Report",
+        "cpt_code": "72148-26",
+        "estimated_price": 250
+      },
+      {
+        "description": "Orthopedic Specialist Consultation",
+        "cpt_code": "99204",
+        "estimated_price": 220
+      },
+      {
+        "description": "Follow-up Physical Therapy Evaluation",
+        "cpt_code": "97161",
+        "estimated_price": 160
+      },
+      {
+        "description": "Prescription NSAID Therapy (ibuprofen)",
+        "cpt_code": "N/A",
+        "estimated_price": 45
+      }
+    ],
+    "prescribed_medications": [
+      "Continue NSAIDs (as currently tolerated)",
+      "Prescribed Lyrica 75mg bid pending authorization of MRI"
+    ],
+    "lab_results": {
+      "hba1c": "5.6%",
+      "cholesterol_total": "182 mg/dL",
+      "ldl": "112 mg/dL",
+      "hdl": "48 mg/dL",
+      "triglycerides": "145 mg/dL",
+      "creatinine": "0.95 mg/dL",
+      "egfr": "92 mL/min",
+      "alt": "32 U/L",
+      "ast": "28 U/L"
+    },
+    "pharmacy": {
+      "pharmacy_name": "CVS Pharmacy",
+      "pharmacy_address": "100 Main St, Boston, MA",
+      "pharmacy_phone": "(555) 111-2222"
+    },
+    "documents_present": {
+      "lab_report": true,
+      "doctor_notes": true,
+      "patient_info": true,
+      "insurance_card": true,
+      "pretreatment_estimate": true,
+      "prior_treatment_documentation": true,
+      "procedure_order": true,
+      "physician_referral": false
+    },
+    "extraction_confidence": "high",
+    "missing_fields": []
+  },
+  "agent2": {
+    "ready": true,
+    "missing_required": [],
+    "missing_recommended": [
+      "document_missing:physician_referral"
+    ],
+    "format_warnings": [],
+    "doc_warnings": [
+      "document_missing:physician_referral"
+    ],
+    "llm_review": {
+      "issues": [
+        "The physician referral is missing which is critical for prior authorization."
+      ],
+      "icd10_procedure_match": true,
+      "cpt_procedure_match": true,
+      "urgency_justified": true,
+      "urgency_notes": "The urgency level is clinically justified given the severe radicular pain for 7 weeks and failure of conservative treatments.",
+      "overall_quality": "fair",
+      "recommendation": "Ensure the inclusion of the physician referral to complete the documentation."
+    },
+    "urgency": "urgent",
+    "urgency_justification": "Severe radicular pain for 7 weeks, failed conservative treatment, clinical suspicion of lumbar radiculopathy",
+    "data": {
+      "patient_name": "John R. Doe",
+      "patient_dob": "1985-05-12",
+      "patient_mrn": "PT-88293",
+      "patient_gender": "Male",
+      "patient_address": "12 Maple St, Boston, MA 02118",
+      "patient_phone": "(555) 123-4567",
+      "patient_email": "j.doe85@example.com",
+      "emergency_contact": "Jane Doe",
+      "insurer": "BlueCross BlueShield",
+      "plan_type": "BlueCross Massachusetts",
+      "policy_number": "BCBS-99001122",
+      "group_number": "1029384756",
+      "member_id": "BCBS-99001122",
+      "copay_specialist": 50,
+      "diagnosis": "Lumbar Radiculopathy",
+      "icd10_codes": [
+        "M54.16"
+      ],
+      "icd10": "M54.16",
+      "procedure": "MRI Lumbar Spine without Contrast",
+      "cpt_codes": [
+        "72148"
+      ],
+      "cpt": "72148",
+      "ordering_physician": "Dr. Sarah Jenkins",
+      "physician_specialty": "Orthopedic Surgery",
+      "physician_phone": "555-010-8899",
+      "prior_treatments": [
+        "NSAIDs (ibuprofen) - 4 weeks",
+        "Minimal relief",
+        "Physical Therapy - 3 weeks - Symptoms persisted"
+      ],
+      "clinical_findings": "Positive straight leg raise on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+      "symptom_duration_weeks": 7,
+      "pain_score": 99,
+      "urgency": "urgent",
+      "urgency_justification": "Severe radicular pain for 7 weeks, failed conservative treatment, clinical suspicion of lumbar radiculopathy",
+      "hospital": "Metropolitan General Hospital",
+      "hospital_address": "456 Main St, Boston, MA 02118",
+      "date_of_service": "2024-03-10",
+      "date_of_proposed_treatment": "2024-03-15",
+      "total_estimated_cost": 2025,
+      "cost_line_items": [
+        {
+          "description": "MRI Lumbar Spine Without Contrast",
+          "cpt_code": "72148",
+          "estimated_price": 1350
+        },
+        {
+          "description": "Radiologist Interpretation & Report",
+          "cpt_code": "72148-26",
+          "estimated_price": 250
+        },
+        {
+          "description": "Orthopedic Specialist Consultation",
+          "cpt_code": "99204",
+          "estimated_price": 220
+        },
+        {
+          "description": "Follow-up Physical Therapy Evaluation",
+          "cpt_code": "97161",
+          "estimated_price": 160
+        },
+        {
+          "description": "Prescription NSAID Therapy (ibuprofen)",
+          "cpt_code": "N/A",
+          "estimated_price": 45
+        }
+      ],
+      "prescribed_medications": [
+        "Continue NSAIDs (as currently tolerated)",
+        "Prescribed Lyrica 75mg bid pending authorization of MRI"
+      ],
+      "lab_results": {
+        "hba1c": "5.6%",
+        "cholesterol_total": "182 mg/dL",
+        "ldl": "112 mg/dL",
+        "hdl": "48 mg/dL",
+        "triglycerides": "145 mg/dL",
+        "creatinine": "0.95 mg/dL",
+        "egfr": "92 mL/min",
+        "alt": "32 U/L",
+        "ast": "28 U/L"
+      },
+      "pharmacy": {
+        "pharmacy_name": "CVS Pharmacy",
+        "pharmacy_address": "100 Main St, Boston, MA",
+        "pharmacy_phone": "(555) 111-2222"
+      },
+      "documents_present": {
+        "lab_report": true,
+        "doctor_notes": true,
+        "patient_info": true,
+        "insurance_card": true,
+        "pretreatment_estimate": true,
+        "prior_treatment_documentation": true,
+        "procedure_order": true,
+        "physician_referral": false
+      },
+      "extraction_confidence": "high",
+      "missing_fields": []
+    }
+  },
+  "agent3": {
+    "authorization_required": true,
+    "policy_analysis": {
+      "authorization_required": true,
+      "primary_cpt_requiring_auth": "72148",
+      "cpt_auth_status": {
+        "72148": "auth_required"
+      },
+      "standard_clinical_criteria": {
+        "minimum_symptom_duration_weeks": 6,
+        "minimum_symptom_duration_met": true,
+        "actual_symptom_duration_weeks": 7,
+        "step_therapy_required": true,
+        "step_therapy_steps_required": [
+          "NSAIDs",
+          "Physical Therapy"
+        ],
+        "step_therapy_steps_completed": [
+          "NSAIDs",
+          "Physical Therapy"
+        ],
+        "step_therapy_met": true,
+        "step_therapy_gaps": [],
+        "clinical_exam_required": true,
+        "clinical_exam_findings_required": [
+          "Positive straight leg raise",
+          "Neurological exam"
+        ],
+        "clinical_exam_met": true,
+        "specialist_referral_required": false,
+        "specialist_referral_met": true,
+        "prior_imaging_required": false,
+        "prior_imaging_met": true,
+        "medication_trial_required": true,
+        "medication_trial_details": "NSAIDs for 4 weeks, Physical Therapy for 3 weeks",
+        "medication_trial_met": true
+      },
+      "criteria_met": [
+        "Minimum symptom duration met",
+        "Step therapy completed",
+        "Clinical exam findings met",
+        "Medication trial met"
+      ],
+      "criteria_not_met": [],
+      "required_documents": [
+        "Ordering physician's note",
+        "Patient's medical history",
+        "Clinical findings documentation",
+        "Documentation of prior treatments and outcomes",
+        "Prescription details for Lyrica",
+        "Lab results",
+        "Patient's informed consent for MRI"
+      ],
+      "missing_documents": [],
+      "missing_information": [],
+      "unmet_requirements": [],
+      "approval_timeline_days": 5,
+      "expedited_review_available": true,
+      "expedited_timeline_days": 2,
+      "expedited_submission_path": "Expedited submission through online portal or direct phone line",
+      "validity_period_days": 90,
+      "applicable_copay": 0,
+      "submission_portal": "BlueCross BlueShield online portal",
+      "policy_notes": "Given the urgent nature of the request, expedited review is applicable.",
+      "likelihood_of_approval": "high",
+      "reasoning": "All clinical criteria and documentation requirements are met. The patient has undergone the necessary step therapy, has a symptom duration exceeding the minimum requirement, and has a positive clinical exam finding. The ordering physician is appropriately specialized, and no additional documentation or tests are required."
+    },
+    "missing_documents": [],
+    "missing_information": [],
+    "unmet_requirements": [],
+    "criteria_not_met": [],
+    "expedited_review_available": true,
+    "expedited_timeline_days": 2,
+    "data": {
+      "patient_name": "John R. Doe",
+      "patient_dob": "1985-05-12",
+      "patient_mrn": "PT-88293",
+      "patient_gender": "Male",
+      "patient_address": "12 Maple St, Boston, MA 02118",
+      "patient_phone": "(555) 123-4567",
+      "patient_email": "j.doe85@example.com",
+      "emergency_contact": "Jane Doe",
+      "insurer": "BlueCross BlueShield",
+      "plan_type": "BlueCross Massachusetts",
+      "policy_number": "BCBS-99001122",
+      "group_number": "1029384756",
+      "member_id": "BCBS-99001122",
+      "copay_specialist": 50,
+      "diagnosis": "Lumbar Radiculopathy",
+      "icd10_codes": [
+        "M54.16"
+      ],
+      "icd10": "M54.16",
+      "procedure": "MRI Lumbar Spine without Contrast",
+      "cpt_codes": [
+        "72148"
+      ],
+      "cpt": "72148",
+      "ordering_physician": "Dr. Sarah Jenkins",
+      "physician_specialty": "Orthopedic Surgery",
+      "physician_phone": "555-010-8899",
+      "prior_treatments": [
+        "NSAIDs (ibuprofen) - 4 weeks",
+        "Minimal relief",
+        "Physical Therapy - 3 weeks - Symptoms persisted"
+      ],
+      "clinical_findings": "Positive straight leg raise on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+      "symptom_duration_weeks": 7,
+      "pain_score": 99,
+      "urgency": "urgent",
+      "urgency_justification": "Severe radicular pain for 7 weeks, failed conservative treatment, clinical suspicion of lumbar radiculopathy",
+      "hospital": "Metropolitan General Hospital",
+      "hospital_address": "456 Main St, Boston, MA 02118",
+      "date_of_service": "2024-03-10",
+      "date_of_proposed_treatment": "2024-03-15",
+      "total_estimated_cost": 2025,
+      "cost_line_items": [
+        {
+          "description": "MRI Lumbar Spine Without Contrast",
+          "cpt_code": "72148",
+          "estimated_price": 1350
+        },
+        {
+          "description": "Radiologist Interpretation & Report",
+          "cpt_code": "72148-26",
+          "estimated_price": 250
+        },
+        {
+          "description": "Orthopedic Specialist Consultation",
+          "cpt_code": "99204",
+          "estimated_price": 220
+        },
+        {
+          "description": "Follow-up Physical Therapy Evaluation",
+          "cpt_code": "97161",
+          "estimated_price": 160
+        },
+        {
+          "description": "Prescription NSAID Therapy (ibuprofen)",
+          "cpt_code": "N/A",
+          "estimated_price": 45
+        }
+      ],
+      "prescribed_medications": [
+        "Continue NSAIDs (as currently tolerated)",
+        "Prescribed Lyrica 75mg bid pending authorization of MRI"
+      ],
+      "lab_results": {
+        "hba1c": "5.6%",
+        "cholesterol_total": "182 mg/dL",
+        "ldl": "112 mg/dL",
+        "hdl": "48 mg/dL",
+        "triglycerides": "145 mg/dL",
+        "creatinine": "0.95 mg/dL",
+        "egfr": "92 mL/min",
+        "alt": "32 U/L",
+        "ast": "28 U/L"
+      },
+      "pharmacy": {
+        "pharmacy_name": "CVS Pharmacy",
+        "pharmacy_address": "100 Main St, Boston, MA",
+        "pharmacy_phone": "(555) 111-2222"
+      },
+      "documents_present": {
+        "lab_report": true,
+        "doctor_notes": true,
+        "patient_info": true,
+        "insurance_card": true,
+        "pretreatment_estimate": true,
+        "prior_treatment_documentation": true,
+        "procedure_order": true,
+        "physician_referral": false
+      },
+      "extraction_confidence": "high",
+      "missing_fields": []
+    }
+  },
+  "pipeline_status": "HALTED_MISSING_DOCUMENTS",
+  "missing_docs": [
+    "Ordering physician's note",
+    "Prescription details for Lyrica",
+    "Patient's informed consent for MRI",
+    "physician_referral"
+  ],
+  "halted_at": "agent4"
+}
