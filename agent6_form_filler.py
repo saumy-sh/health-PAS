@@ -12,7 +12,7 @@ Strategy:
   • We use the FORMS.md annotation approach:
       1. Load fields_template.json (53 pre-mapped field positions in PDF coords)
       2. Substitute {{placeholders}} with real patient/clinical data
-      3. Call fill_pdf_form_with_annotations.py to overlay text onto the PDF
+      3. Use pypdf FreeText annotations to overlay text directly (no external script)
   • Output: a filled PDF ready for submission
 
 Input  : agent5_output dict (contains all patient + clinical data)
@@ -20,10 +20,11 @@ Output : dict  { "filled_pdf_path": str, "fields_filled": int, "fields_skipped":
 """
 
 import json
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
+
+from pypdf import PdfReader, PdfWriter
+from pypdf.annotations import FreeText
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -31,14 +32,8 @@ from pathlib import Path
 # Update FORM_PDF_PATH to wherever the form lives in your project
 # ─────────────────────────────────────────────────────────────────────────────
 
-FORM_PDF_PATH       = "./data/forms/Pre-Auth Form EWA.pdf"
-FIELDS_TEMPLATE_PATH = "./data/forms/fields_template.json"
-FILL_SCRIPT_PATH    = str(
-    Path(__file__).parent / "pdf_scripts" / "fill_pdf_form_with_annotations.py"
-)
-
-# Fallback: look in the skills directory if local copy not present
-FILL_SCRIPT_FALLBACK = "/mnt/skills/public/pdf/scripts/fill_pdf_form_with_annotations.py"
+FORM_PDF_PATH        = "./forms/PreAuth_Form_EWA.pdf"
+FIELDS_TEMPLATE_PATH = "./forms/fields_template.json"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -248,8 +243,18 @@ def _build_filled_fields_json(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fill the PDF using the annotation script
+# Fill the PDF — inlined pypdf annotation logic (no external script needed)
+# Works on Windows, Linux, and Mac without any path resolution.
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _transform_pdf_coords(bbox: list, pdf_height: float) -> tuple:
+    """Convert PDF-space bounding box (top-origin) to pypdf rect (bottom-origin)."""
+    left   = bbox[0]
+    right  = bbox[2]
+    top    = pdf_height - bbox[1]   # flip y: PDF top  → pypdf bottom-origin
+    bottom = pdf_height - bbox[3]   # flip y: PDF bottom → pypdf top
+    return left, bottom, right, top
+
 
 def _fill_pdf(
     blank_pdf:   str,
@@ -257,27 +262,58 @@ def _fill_pdf(
     output_pdf:  str,
 ) -> bool:
     """
-    Call fill_pdf_form_with_annotations.py to overlay text onto the PDF.
-    Returns True on success, False on failure.
+    Overlay text annotations onto the blank EWA PDF using pypdf.
+    Reads field positions from fields_json (PDF coordinate space).
+    Returns True on success, False on any error.
     """
-    # Find the fill script
-    fill_script = FILL_SCRIPT_PATH
-    if not Path(fill_script).exists():
-        fill_script = FILL_SCRIPT_FALLBACK
-    if not Path(fill_script).exists():
-        print(f"  [Agent6] ❌ fill_pdf_form_with_annotations.py not found")
+    try:
+        with open(fields_json, "r", encoding="utf-8") as f:
+            fields_data = json.load(f)
+
+        reader = PdfReader(blank_pdf)
+        writer = PdfWriter()
+        writer.append(reader)
+
+        # Build a page-number → actual PDF dimensions map
+        pdf_dims = {}
+        for i, page in enumerate(reader.pages):
+            mb = page.mediabox
+            pdf_dims[i + 1] = (float(mb.width), float(mb.height))
+
+        annotations_added = 0
+        for field in fields_data.get("form_fields", []):
+            text = field.get("entry_text", {}).get("text", "")
+            if not text:
+                continue  # skip empty fields
+
+            page_num = field["page_number"]
+            _, pdf_height = pdf_dims.get(page_num, (595.0, 842.0))
+
+            rect = _transform_pdf_coords(field["entry_bounding_box"], pdf_height)
+            font_size = str(field.get("entry_text", {}).get("font_size", 9)) + "pt"
+
+            annotation = FreeText(
+                text=text,
+                rect=rect,
+                font="Helvetica",
+                font_size=font_size,
+                font_color="000000",
+                border_color=None,
+                background_color=None,
+            )
+            writer.add_annotation(page_number=page_num - 1, annotation=annotation)
+            annotations_added += 1
+
+        with open(output_pdf, "wb") as out:
+            writer.write(out)
+
+        print(f"  [Agent6] ✅ Successfully filled PDF — {annotations_added} annotations added")
+        print(f"  [Agent6] Saved → {output_pdf}")
+        return True
+
+    except Exception as e:
+        print(f"  [Agent6] ❌ PDF fill error: {e}")
         return False
-
-    cmd = [sys.executable, fill_script, blank_pdf, fields_json, output_pdf]
-    print(f"  [Agent6] Running: {' '.join(cmd)}")
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"  [Agent6] ❌ Fill script error:\n{result.stderr}")
-        return False
-
-    print(result.stdout)
-    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

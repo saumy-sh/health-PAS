@@ -2,3 +2,4 @@ nova/
 .env
 __pycahche__/
 *.pyc
+output/
