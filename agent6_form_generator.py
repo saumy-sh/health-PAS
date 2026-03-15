@@ -42,7 +42,7 @@ from bedrock_client import invoke, LITE_MODEL_ID
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Approximate form image dimensions (will be confirmed at runtime)
-FORM_IMG = "pre_auth_form.jpg"
+FORM_IMG = "./data/forms/pre_auth_form.jpg"
 
 # Field coordinate map: field_key -> (x, y, max_chars)
 # All coordinates are in pixels assuming ~1700px wide form image.
@@ -362,7 +362,7 @@ def _render_form_text(form: dict, field_values: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run(agent5_output: dict,
-        form_template_path: str = "pre_auth_form.jpg",
+        form_template_path: str = "./data/forms/pre_auth_form.jpg",
         output_dir: str = ".") -> dict:
     """
     Agent 6 entry point.
@@ -554,5 +554,5 @@ if __name__ == "__main__":
             ],
         },
     }
-    result = run(mock_input, form_template_path="pre_auth_form.jpg")
+    result = run(mock_input, form_template_path="./data/forms/pre_auth_form.jpg")
     print(f"\nFilled form saved to:\n  PNG: {result['form_png_path']}\n  PDF: {result['form_pdf_path']}")

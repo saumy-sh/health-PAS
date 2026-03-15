@@ -1,0 +1,1149 @@
+{
+  "pages": [
+    {
+      "page_number": 1,
+      "pdf_width": 595.8,
+      "pdf_height": 854.64
+    },
+    {
+      "page_number": 2,
+      "pdf_width": 599.4,
+      "pdf_height": 852.48
+    },
+    {
+      "page_number": 3,
+      "pdf_width": 596.16,
+      "pdf_height": 855.36
+    },
+    {
+      "page_number": 4,
+      "pdf_width": 597.96,
+      "pdf_height": 852.84
+    },
+    {
+      "page_number": 5,
+      "pdf_width": 595.44,
+      "pdf_height": 855.0
+    },
+    {
+      "page_number": 6,
+      "pdf_width": 599.4,
+      "pdf_height": 853.2
+    }
+  ],
+  "form_fields": [
+    {
+      "page_number": 1,
+      "description": "Name of TPA/Insurance company",
+      "field_label": "Name of TPA/Insurance company:",
+      "label_bounding_box": [
+        104,
+        196,
+        238,
+        204
+      ],
+      "entry_bounding_box": [
+        244,
+        193,
+        530,
+        207
+      ],
+      "entry_text": {
+        "text": "{{tpa_name}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Toll free phone number",
+      "field_label": "Toll free phone number:",
+      "label_bounding_box": [
+        104,
+        218,
+        198,
+        227
+      ],
+      "entry_bounding_box": [
+        244,
+        215,
+        530,
+        229
+      ],
+      "entry_text": {
+        "text": "{{tpa_phone}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Toll free fax",
+      "field_label": "Toll free fax:",
+      "label_bounding_box": [
+        104,
+        240,
+        154,
+        250
+      ],
+      "entry_bounding_box": [
+        244,
+        237,
+        530,
+        251
+      ],
+      "entry_text": {
+        "text": "{{tpa_fax}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Name of Hospital",
+      "field_label": "Name of Hospital:",
+      "label_bounding_box": [
+        104,
+        264,
+        174,
+        272
+      ],
+      "entry_bounding_box": [
+        244,
+        261,
+        530,
+        275
+      ],
+      "entry_text": {
+        "text": "{{hospital_name}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Hospital Address",
+      "field_label": "i. Address",
+      "label_bounding_box": [
+        123,
+        286,
+        154,
+        295
+      ],
+      "entry_bounding_box": [
+        244,
+        283,
+        530,
+        297
+      ],
+      "entry_text": {
+        "text": "{{hospital_address}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Name of the Patient",
+      "field_label": "Name of the Patient:",
+      "label_bounding_box": [
+        104,
+        360,
+        181,
+        369
+      ],
+      "entry_bounding_box": [
+        244,
+        357,
+        530,
+        371
+      ],
+      "entry_text": {
+        "text": "{{patient_name}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Gender Male checkbox",
+      "field_label": "Male",
+      "label_bounding_box": [
+        297,
+        383,
+        315,
+        391
+      ],
+      "entry_bounding_box": [
+        282,
+        381,
+        293,
+        392
+      ],
+      "entry_text": {
+        "text": "{{gender_male_check}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Gender Female checkbox",
+      "field_label": "Female",
+      "label_bounding_box": [
+        359,
+        383,
+        385,
+        391
+      ],
+      "entry_bounding_box": [
+        344,
+        381,
+        355,
+        392
+      ],
+      "entry_text": {
+        "text": "{{gender_female_check}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Age in Years",
+      "field_label": "Age (Years)",
+      "label_bounding_box": [
+        104,
+        406,
+        122,
+        414
+      ],
+      "entry_bounding_box": [
+        244,
+        403,
+        295,
+        415
+      ],
+      "entry_text": {
+        "text": "{{age_years}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Age in Months",
+      "field_label": "Age (Months)",
+      "label_bounding_box": [
+        338,
+        403,
+        369,
+        412
+      ],
+      "entry_bounding_box": [
+        295,
+        403,
+        335,
+        415
+      ],
+      "entry_text": {
+        "text": "{{age_months}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Date of Birth DD/MM/YYYY",
+      "field_label": "Date of Birth:",
+      "label_bounding_box": [
+        105,
+        429,
+        157,
+        437
+      ],
+      "entry_bounding_box": [
+        244,
+        426,
+        380,
+        438
+      ],
+      "entry_text": {
+        "text": "{{date_of_birth}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Contact number of patient",
+      "field_label": "Contact number:",
+      "label_bounding_box": [
+        104,
+        451,
+        168,
+        459
+      ],
+      "entry_bounding_box": [
+        244,
+        448,
+        530,
+        462
+      ],
+      "entry_text": {
+        "text": "{{patient_phone}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Contact number of attending Relative",
+      "field_label": "Contact number of attending Relative:",
+      "label_bounding_box": [
+        104,
+        474,
+        252,
+        482
+      ],
+      "entry_bounding_box": [
+        257,
+        471,
+        530,
+        485
+      ],
+      "entry_text": {
+        "text": "{{relative_phone}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Insured Card ID number",
+      "field_label": "Insured Card ID number:",
+      "label_bounding_box": [
+        105,
+        496,
+        202,
+        505
+      ],
+      "entry_bounding_box": [
+        244,
+        493,
+        530,
+        507
+      ],
+      "entry_text": {
+        "text": "{{member_id}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Policy number / Name of Corporate",
+      "field_label": "Policy number/Name of Corporate:",
+      "label_bounding_box": [
+        105,
+        518,
+        236,
+        527
+      ],
+      "entry_bounding_box": [
+        244,
+        515,
+        530,
+        529
+      ],
+      "entry_text": {
+        "text": "{{policy_number}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Other insurance No checkbox",
+      "field_label": "No",
+      "label_bounding_box": [
+        430,
+        564,
+        443,
+        572
+      ],
+      "entry_bounding_box": [
+        416,
+        562,
+        427,
+        573
+      ],
+      "entry_text": {
+        "text": "{{other_insurance_no}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Family Physician No checkbox",
+      "field_label": "No",
+      "label_bounding_box": [
+        388,
+        621,
+        400,
+        629
+      ],
+      "entry_bounding_box": [
+        373,
+        619,
+        384,
+        630
+      ],
+      "entry_text": {
+        "text": "{{family_physician_no}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Current Address of Insured Patient",
+      "field_label": "Current Address of Insured Patient:",
+      "label_bounding_box": [
+        81,
+        686,
+        218,
+        694
+      ],
+      "entry_bounding_box": [
+        244,
+        683,
+        530,
+        697
+      ],
+      "entry_text": {
+        "text": "{{patient_address}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 1,
+      "description": "Occupation of Insured Patient",
+      "field_label": "Occupation of Insured Patient:",
+      "label_bounding_box": [
+        81,
+        708,
+        198,
+        716
+      ],
+      "entry_bounding_box": [
+        244,
+        705,
+        530,
+        719
+      ],
+      "entry_text": {
+        "text": "{{occupation}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Name of the treating Doctor",
+      "field_label": "A: Name of the treating Doctor:",
+      "label_bounding_box": [
+        85,
+        131,
+        196,
+        140
+      ],
+      "entry_bounding_box": [
+        244,
+        128,
+        510,
+        142
+      ],
+      "entry_text": {
+        "text": "{{treating_doctor}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Doctor contact number",
+      "field_label": "B: Contact number:",
+      "label_bounding_box": [
+        84,
+        153,
+        148,
+        162
+      ],
+      "entry_bounding_box": [
+        244,
+        150,
+        510,
+        164
+      ],
+      "entry_text": {
+        "text": "{{doctor_phone}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Nature of Illness with presenting complaint",
+      "field_label": "C: Nature of Illness/Disease with presenting complaint:",
+      "label_bounding_box": [
+        84,
+        176,
+        285,
+        184
+      ],
+      "entry_bounding_box": [
+        290,
+        173,
+        510,
+        187
+      ],
+      "entry_text": {
+        "text": "{{illness_complaint}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Relevant Critical Findings",
+      "field_label": "D: Relevant Critical Findings:",
+      "label_bounding_box": [
+        85,
+        198,
+        188,
+        207
+      ],
+      "entry_bounding_box": [
+        244,
+        195,
+        510,
+        209
+      ],
+      "entry_text": {
+        "text": "{{critical_findings}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Duration of present ailment in days",
+      "field_label": "E: Duration of present ailment",
+      "label_bounding_box": [
+        84,
+        221,
+        205,
+        229
+      ],
+      "entry_bounding_box": [
+        320,
+        218,
+        390,
+        232
+      ],
+      "entry_text": {
+        "text": "{{ailment_duration_days}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Date of first consultation DD/MM/YYYY",
+      "field_label": "Date of First consultation:",
+      "label_bounding_box": [
+        123,
+        244,
+        220,
+        252
+      ],
+      "entry_bounding_box": [
+        290,
+        242,
+        420,
+        253
+      ],
+      "entry_text": {
+        "text": "{{first_consultation_date}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Past history of present ailment",
+      "field_label": "Past history of present ailment, if any",
+      "label_bounding_box": [
+        85,
+        254,
+        265,
+        263
+      ],
+      "entry_bounding_box": [
+        290,
+        255,
+        510,
+        265
+      ],
+      "entry_text": {
+        "text": "{{past_history}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Provisional diagnosis",
+      "field_label": "F: Provisional diagnosis:",
+      "label_bounding_box": [
+        84,
+        277,
+        169,
+        285
+      ],
+      "entry_bounding_box": [
+        244,
+        274,
+        510,
+        288
+      ],
+      "entry_text": {
+        "text": "{{provisional_diagnosis}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "ICD 10 code",
+      "field_label": "ICD 10 code",
+      "label_bounding_box": [
+        126,
+        298,
+        174,
+        308
+      ],
+      "entry_bounding_box": [
+        244,
+        295,
+        510,
+        309
+      ],
+      "entry_text": {
+        "text": "{{icd10_code}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Medical management checkbox",
+      "field_label": "Medical Management",
+      "label_bounding_box": [
+        128,
+        344,
+        212,
+        353
+      ],
+      "entry_bounding_box": [
+        217,
+        342,
+        228,
+        353
+      ],
+      "entry_text": {
+        "text": "{{treatment_medical}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Investigation checkbox",
+      "field_label": "Investigation",
+      "label_bounding_box": [
+        128,
+        378,
+        176,
+        387
+      ],
+      "entry_bounding_box": [
+        217,
+        376,
+        228,
+        387
+      ],
+      "entry_text": {
+        "text": "{{treatment_investigation}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Investigation / Medical management details",
+      "field_label": "H: If investigation and/or Medical Management, provide details",
+      "label_bounding_box": [
+        86,
+        412,
+        323,
+        421
+      ],
+      "entry_bounding_box": [
+        330,
+        409,
+        510,
+        423
+      ],
+      "entry_text": {
+        "text": "{{investigation_details}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "Route of Drug Administration",
+      "field_label": "Route of Drug Administration",
+      "label_bounding_box": [
+        126,
+        435,
+        242,
+        443
+      ],
+      "entry_bounding_box": [
+        248,
+        432,
+        510,
+        446
+      ],
+      "entry_text": {
+        "text": "{{drug_route}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "If surgical name of surgery",
+      "field_label": "I: If surgical, name of surgery",
+      "label_bounding_box": [
+        82,
+        457,
+        188,
+        466
+      ],
+      "entry_bounding_box": [
+        244,
+        454,
+        510,
+        468
+      ],
+      "entry_text": {
+        "text": "{{surgery_name}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 2,
+      "description": "ICD 10 PCS code",
+      "field_label": "ICD 10 PCS code",
+      "label_bounding_box": [
+        126,
+        478,
+        196,
+        488
+      ],
+      "entry_bounding_box": [
+        244,
+        475,
+        510,
+        489
+      ],
+      "entry_text": {
+        "text": "{{icd10_pcs_code}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Date of admission DD/MM/YYYY",
+      "field_label": "A. Date of admission",
+      "label_bounding_box": [
+        105,
+        132,
+        174,
+        141
+      ],
+      "entry_bounding_box": [
+        310,
+        130,
+        388,
+        141
+      ],
+      "entry_text": {
+        "text": "{{admission_date}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Time of admission HH:MM",
+      "field_label": "B. Time of admission",
+      "label_bounding_box": [
+        104,
+        154,
+        176,
+        164
+      ],
+      "entry_bounding_box": [
+        310,
+        153,
+        393,
+        163
+      ],
+      "entry_text": {
+        "text": "{{admission_time}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Planned checkbox for hospitalization type",
+      "field_label": "Planned",
+      "label_bounding_box": [
+        443,
+        178,
+        475,
+        187
+      ],
+      "entry_bounding_box": [
+        480,
+        180,
+        503,
+        190
+      ],
+      "entry_text": {
+        "text": "{{hospitalization_planned}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Expected days stay in hospital",
+      "field_label": "E. Expected number of Days/stay in hospital",
+      "label_bounding_box": [
+        104,
+        347,
+        266,
+        355
+      ],
+      "entry_bounding_box": [
+        390,
+        344,
+        480,
+        358
+      ],
+      "entry_text": {
+        "text": "{{expected_days}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Room Type",
+      "field_label": "G. Room Type",
+      "label_bounding_box": [
+        104,
+        392,
+        150,
+        401
+      ],
+      "entry_bounding_box": [
+        244,
+        389,
+        490,
+        403
+      ],
+      "entry_text": {
+        "text": "{{room_type}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Per day room rent nursing and service charges",
+      "field_label": "H. Per day room rent",
+      "label_bounding_box": [
+        104,
+        415,
+        343,
+        423
+      ],
+      "entry_bounding_box": [
+        390,
+        412,
+        490,
+        426
+      ],
+      "entry_text": {
+        "text": "{{room_rent_daily}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Expected cost of investigation and diagnostic",
+      "field_label": "I. Expected cost of investigation + diagnostic",
+      "label_bounding_box": [
+        104,
+        437,
+        270,
+        446
+      ],
+      "entry_bounding_box": [
+        390,
+        434,
+        490,
+        448
+      ],
+      "entry_text": {
+        "text": "{{investigation_cost}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "ICU charges",
+      "field_label": "J. ICU charges",
+      "label_bounding_box": [
+        104,
+        459,
+        152,
+        468
+      ],
+      "entry_bounding_box": [
+        390,
+        456,
+        490,
+        470
+      ],
+      "entry_text": {
+        "text": "{{icu_charges}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "OT charges",
+      "field_label": "K. OT charges",
+      "label_bounding_box": [
+        104,
+        482,
+        148,
+        490
+      ],
+      "entry_bounding_box": [
+        390,
+        479,
+        490,
+        493
+      ],
+      "entry_text": {
+        "text": "{{ot_charges}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Professional fees surgeon anesthetist consultation",
+      "field_label": "L. Professional fees",
+      "label_bounding_box": [
+        104,
+        505,
+        371,
+        513
+      ],
+      "entry_bounding_box": [
+        390,
+        502,
+        490,
+        516
+      ],
+      "entry_text": {
+        "text": "{{professional_fees}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Medicines consumables cost of implants",
+      "field_label": "M. Medicines + Consumables",
+      "label_bounding_box": [
+        104,
+        527,
+        396,
+        536
+      ],
+      "entry_bounding_box": [
+        400,
+        524,
+        490,
+        538
+      ],
+      "entry_text": {
+        "text": "{{medicines_cost}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Other hospital expenses",
+      "field_label": "N. Other hospital expenses if any",
+      "label_bounding_box": [
+        104,
+        550,
+        221,
+        558
+      ],
+      "entry_bounding_box": [
+        390,
+        547,
+        490,
+        561
+      ],
+      "entry_text": {
+        "text": "{{other_expenses}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 3,
+      "description": "Sum total expected cost of hospitalization",
+      "field_label": "P. Sum Total expected cost of hospitalization",
+      "label_bounding_box": [
+        104,
+        595,
+        266,
+        603
+      ],
+      "entry_bounding_box": [
+        390,
+        592,
+        490,
+        606
+      ],
+      "entry_text": {
+        "text": "{{total_cost}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 4,
+      "description": "Name of the treating doctor declaration",
+      "field_label": "Name of the treating doctor",
+      "label_bounding_box": [
+        107,
+        176,
+        213,
+        185
+      ],
+      "entry_bounding_box": [
+        244,
+        174,
+        500,
+        185
+      ],
+      "entry_text": {
+        "text": "{{treating_doctor}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 4,
+      "description": "Qualification of treating doctor",
+      "field_label": "Qualification:",
+      "label_bounding_box": [
+        107,
+        189,
+        159,
+        198
+      ],
+      "entry_bounding_box": [
+        244,
+        188,
+        500,
+        197
+      ],
+      "entry_text": {
+        "text": "{{doctor_qualification}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 4,
+      "description": "Registration number with State code",
+      "field_label": "Registration number with State code",
+      "label_bounding_box": [
+        107,
+        198,
+        248,
+        207
+      ],
+      "entry_bounding_box": [
+        253,
+        198,
+        500,
+        209
+      ],
+      "entry_text": {
+        "text": "{{doctor_registration}}",
+        "font_size": 8
+      }
+    },
+    {
+      "page_number": 5,
+      "description": "Patient Insured Name for declaration",
+      "field_label": "Patient's / Insured's Name",
+      "label_bounding_box": [
+        105,
+        426,
+        207,
+        435
+      ],
+      "entry_bounding_box": [
+        215,
+        423,
+        510,
+        437
+      ],
+      "entry_text": {
+        "text": "{{patient_name}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 5,
+      "description": "Patient contact number for declaration",
+      "field_label": "Contact number",
+      "label_bounding_box": [
+        80,
+        449,
+        142,
+        458
+      ],
+      "entry_bounding_box": [
+        155,
+        446,
+        330,
+        460
+      ],
+      "entry_text": {
+        "text": "{{patient_phone}}",
+        "font_size": 9
+      }
+    },
+    {
+      "page_number": 5,
+      "description": "Declaration date",
+      "field_label": "Date:",
+      "label_bounding_box": [
+        70,
+        495,
+        89,
+        503
+      ],
+      "entry_bounding_box": [
+        96,
+        492,
+        230,
+        506
+      ],
+      "entry_text": {
+        "text": "{{declaration_date}}",
+        "font_size": 9
+      }
+    }
+  ]
+}

@@ -1,9 +1,16 @@
 pipeline:
   name: AI_PreAuthorization_Preparation_System
+  version: "2.0"
   description: >
     AI pipeline that analyzes patient medical documents and insurance information,
-    determines if a requested treatment requires prior authorization, validates
-    required documentation, and generates a completed pre-authorization request form.
+    validates all 7 pre-authorization steps using a deterministic checklist,
+    checks clinical eligibility criteria, and generates a completed
+    pre-authorization request form (including JPG form fill).
+
+  reliability_design:
+    document_checking: deterministic   # never hallucinated — same input = same output
+    clinical_criteria: programmatic_first_then_llm
+    llm_temperature:   0.0             # all agents run at temp=0 for consistency
 
   input:
     description: >
@@ -11,264 +18,224 @@ pipeline:
     schema:
       documents:
         type: list
-        description: Uploaded patient documents
         items:
           document_name: string
           file_type: pdf | image | doc
 
+  # ════════════════════════════════════════════════════════════════════════════
   stages:
+  # ════════════════════════════════════════════════════════════════════════════
 
-  - agent: document_intelligence_agent
-    purpose: >
-      Extract structured information from each uploaded medical or insurance document.
-      Identify document type and extract relevant structured fields.
-
-    model: amazon.nova-pro (multimodal)
-
-    input:
-      documents: pipeline.input.documents
-
-    processing:
-      steps:
-        - classify_document_type
-        - extract_structured_content
-        - extract_raw_text
-
-    document_types_supported:
-      - insurance_card
-      - prescription
-      - lab_report
-      - imaging_report
-      - mri_report
-      - doctor_notes
-      - discharge_summary
-      - therapy_report
-      - treatment_estimate
-      - clinical_notes
-      - referral_letter
-      - hospital_bill
-      - unknown
-
+  - agent: document_intelligence_agent        # Agent 1
+    model: amazon.nova-pro
+    strategy: two_pass_extraction
+    pass_1:
+      purpose: Core field extraction (patient, insurance, clinical, lab, cost)
+      max_tokens: 4096
+    pass_2:
+      purpose: Per-document detail summary
+      max_tokens: 1500
+      blocking: false   # pipeline continues even if this pass fails
     output_schema:
-      extracted_documents:
+      documents:
         type: list
         items:
-          document_name: string
           document_type: string
-          content: object
-          raw_text: string
-          tags: list
+          content: object              # FULL values, not just field names
+          completeness:
+            completeness_score: float  # 0.0 – 1.0
+            missing_critical_fields: list
+            null_fields: list
+      document_content_map: object     # { doc_type → content }
+      field_source_map: object         # { field → which doc it came from }
+      null_fields_by_doc: object       # { doc_type → [empty fields] }
+      completeness_summary: object     # { doc_type → { score, status, missing } }
+      per_document_extraction: list    # per-image detail (Pass 2)
+    error_handling:
+      json_repair: true
+      graceful_degradation: true
 
-  - agent: patient_insurance_agent
+  - agent: policy_query_agent                 # Agent 2
+    model: amazon.nova-micro
+    purpose: Sanity-check extracted fields before policy lookup
+    output_schema:
+      ready: boolean
+      missing_required: list
+      missing_recommended: list
+
+  - agent: policy_retrieval_agent             # Agent 3
+    model: amazon.nova-lite
+    temperature: 0.0
+    strategy: deterministic_checklist_plus_llm
+    deterministic_layer:
+      purpose: >
+        Evaluate the 7 pre-authorization steps against confirmed-present documents.
+        This layer is 100% deterministic — same input always produces same output.
+      checklist_steps:
+        - step: 1_insurance_info
+          label: Patient Insurance Information
+          required: true
+          satisfied_by: [Insurance Card, Patient Information Sheet]
+          proof_fields:
+            Insurance Card: [insurer_name, policy_number, member_id]
+            Patient Information Sheet: [patient_name, dob]
+        - step: 1_patient_demographics
+          label: Patient Demographics
+          required: true
+          satisfied_by: [Patient Information Sheet, Doctor Notes]
+        - step: 2_procedure_codes
+          label: Procedure Codes (CPT/HCPCS)
+          required: true
+          satisfied_by: [Doctor Notes, Medical Pretreatment Estimate]
+          proof_fields:
+            Doctor Notes: [requested_procedure, cpt_codes]
+        - step: 3_diagnosis_icd10
+          label: Primary Diagnosis with ICD-10 Code
+          required: true
+          satisfied_by: [Doctor Notes, Physician Referral]
+          proof_fields:
+            Doctor Notes: [diagnosis, icd10_codes]
+        - step: 3_clinical_findings
+          label: Clinical Examination Findings
+          required: true
+          satisfied_by: [Doctor Notes]
+          proof_fields:
+            Doctor Notes: [clinical_findings]
+        - step: 4_prior_treatments
+          label: Prior Treatments / Step Therapy Documentation
+          required: true
+          satisfied_by: [Doctor Notes, Physician Referral, Prior Treatment Documentation]
+          proof_fields:
+            Doctor Notes: [prior_treatments]
+        - step: 5_expedited_review
+          label: Expedited Review Justification
+          required: false   # only if urgency requested
+        - step: 6_cost_estimate
+          label: Pretreatment Cost Estimate
+          required: true
+          satisfied_by: [Medical Pretreatment Estimate]
+          proof_fields:
+            Medical Pretreatment Estimate: [total_estimated_cost]
+        - step: 6_ordering_physician
+          label: Ordering Physician Credentials
+          required: true
+          satisfied_by: [Doctor Notes, Physician Referral, Prescription]
+          proof_fields:
+            Doctor Notes: [ordering_physician, physician_specialty]
+        - step: 6_lab_results
+          label: Lab Results
+          required: false
+          satisfied_by: [Lab Report]
+        - step: 6_prescription
+          label: Prescription Record (for medication trials)
+          required: false
+          satisfied_by: [Prescription, Doctor Notes]
+    llm_layer:
+      purpose: >
+        Assess clinical compliance criteria only.
+        CANNOT generate new document requirements — that is handled by the
+        deterministic layer. Only evaluates: symptom duration, step therapy,
+        clinical exam adequacy, medication trial, specialist referral.
+      temperature: 0.0
+    output_schema:
+      canonical_requirements: list      # from deterministic layer — authoritative
+      checklist_result: object          # full checklist evaluation
+      missing_documents: list           # only truly missing required docs
+      optional_missing: list            # non-blocking optional docs
+      policy_analysis: object           # LLM clinical criteria assessment
+
+  - agent: document_requirement_checker       # Agent 4
+    model: amazon.nova-micro
     purpose: >
-      Compile patient demographics and insurance details from extracted documents.
+      Re-verify each canonical requirement using FULL document content values.
+      Catch partial documents (present but with null critical fields).
+      Generate precise, actionable user instructions.
+    strategy: programmatic_verify_then_user_prompts
+    input:
+      canonical_requirements: agent3.output.canonical_requirements
+      checklist_result: agent3.output.checklist_result
+      document_content_map: agent1.output.document_content_map
+      completeness_summary: agent1.output.completeness_summary
+      null_fields_by_doc: agent1.output.null_fields_by_doc
+    halt_conditions:
+      - truly_missing documents exist
+      - partial_docs_blocking (completeness_score < 0.5 on a required doc)
+    output_schema:
+      can_proceed: boolean
+      verified_present: list
+      missing_docs: list
+      partial_docs_blocking: list
+      partial_docs_soft: list
+      user_action_required: list    # sorted HIGH → LOW priority
+      document_completeness: object
 
+  - agent: clinical_requirements_agent        # Agent 5
+    model: amazon.nova-pro
+    purpose: >
+      Check clinical pre-authorization requirements programmatically:
+        - Minimum symptom duration (procedure-specific)
+        - Step therapy / medication trial compliance
+        - Specialist referral presence
+        - Clinical examination documentation
+      Then run LLM eligibility determination.
+    strategy: programmatic_checks_first_then_llm
+    programmatic_checks:
+      - minimum_symptom_duration
+      - step_therapy_compliance
+      - medication_trial_documentation
+      - specialist_referral_check
+      - clinical_findings_check
+    llm_override_protection: >
+      If programmatic checks find critical failures (step therapy unmet,
+      symptom duration unmet), determination is overridden to PENDING_REVIEW
+      even if LLM says APPROVED.
+    output_schema:
+      eligible: boolean
+      determination: APPROVED | DENIED | PENDING_DOCS | PENDING_REVIEW
+      clinical_requirements_check: object
+      requirements_met: list
+      requirements_not_met: list
+      step_therapy_status: object
+      criteria_evaluation: object
+
+  - agent: prior_auth_form_generator          # Agent 6
+    model: amazon.nova-lite
+    purpose: >
+      Generate a complete prior authorization form in JSON + text format.
+      Maps all extracted data to the standard form fields.
+    output_schema:
+      form_json: object
+      form_text: string
+      form_json_path: string
+      form_txt_path: string
+
+  - agent: jpg_form_filler                    # Agent 6b (new)
+    model: amazon.nova-pro
+    purpose: >
+      Fill the actual pre_auth_form.jpg by:
+        1. Parsing form fields from the JPG using Nova Pro vision
+        2. Mapping Agent 6 JSON output to form field coordinates
+        3. Using Pillow to overlay text values at correct positions
+        4. Saving a filled JPG for submission
+    output_schema:
+      filled_form_path: string
+      fields_filled: list
+      fields_skipped: list
+
+  - agent: portal_automation_agent            # Agent 7
     model: amazon.nova-lite
 
-    input:
-      extracted_documents: document_intelligence_agent.output.extracted_documents
+  - agent: claim_status_tracker              # Agent 8
+    model: amazon.nova-micro
 
-    processing:
-      steps:
-        - locate_insurance_card
-        - extract_patient_demographics
-        - extract_policy_information
-        - validate_member_id
-
-    output_schema:
-      patient_insurance_profile:
-        patient_name: string
-        date_of_birth: string
-        insurance_provider: string
-        member_id: string
-        policy_number: string
-        plan_type: string
-        prior_authorization_reference: optional_string
-
-  - agent: clinical_information_agent
-    purpose: >
-      Identify the patient's diagnosis, clinical rationale, and supporting
-      medical evidence from documents.
-
+  - agent: appeal_agent                      # Agent 9 (conditional)
     model: amazon.nova-pro
-
-    input:
-      extracted_documents: document_intelligence_agent.output.extracted_documents
-
-    processing:
-      steps:
-        - extract_primary_diagnosis
-        - detect_icd10_codes
-        - extract_clinical_rationale
-        - collect_supporting_evidence
-
-    output_schema:
-      clinical_information:
-        primary_diagnosis:
-          description: string
-          icd10_code: string
-        supporting_evidence:
-          lab_results: list
-          imaging_findings: list
-          physician_notes: list
-          clinical_summary: string
-
-  - agent: procedure_detection_agent
-    purpose: >
-      Detect the medical procedure, treatment, or medication for which
-      prior authorization is likely being requested.
-
-    model: amazon.nova-pro
-
-    input:
-      extracted_documents: document_intelligence_agent.output.extracted_documents
-
-    processing:
-      steps:
-        - analyze_doctor_notes
-        - analyze_treatment_estimate
-        - detect_recommended_procedure
-        - infer_procedure_codes
-
-    output_schema:
-      requested_procedure:
-        procedure_name: string
-        cpt_code: optional_string
-        hcpcs_code: optional_string
-        ndc_code: optional_string
-        dosage: optional_string
-        frequency: optional_string
-        duration: optional_string
-        confidence_score: float
-
-  - agent: prior_treatment_history_agent
-    purpose: >
-      Identify past treatments attempted and their outcomes, which insurers
-      often require before approving advanced procedures.
-
-    model: amazon.nova-pro
-
-    input:
-      extracted_documents: document_intelligence_agent.output.extracted_documents
-
-    processing:
-      steps:
-        - detect_previous_medications
-        - detect_physical_therapy
-        - detect_other_conservative_treatments
-        - extract_treatment_outcomes
-
-    output_schema:
-      prior_treatments:
-        treatments:
-          - treatment_name: string
-            duration: string
-            outcome: string
-            reason_for_discontinuation: optional_string
-
-  - agent: urgency_detection_agent
-    purpose: >
-      Determine if expedited review should be requested based on clinical risk
-      described in medical notes.
-
-    model: amazon.nova-lite
-
-    input:
-      clinical_information: clinical_information_agent.output.clinical_information
-
-    processing:
-      steps:
-        - analyze_clinical_notes_for_risk
-        - detect_emergency_indicators
-
-    output_schema:
-      expedited_review:
-        requested: boolean
-        justification: optional_string
-
-  - agent: policy_requirement_agent
-    purpose: >
-      Retrieve insurance policy rules and determine required documentation
-      for the detected procedure.
-
-    model: amazon.nova-pro
-
-    input:
-      insurance_provider: patient_insurance_agent.output.patient_insurance_profile.insurance_provider
-      procedure: procedure_detection_agent.output.requested_procedure
-
-    processing:
-      steps:
-        - retrieve_policy_documents
-        - identify_pre_auth_requirement
-        - list_required_documents
-
-    output_schema:
-      policy_requirements:
-        prior_authorization_required: boolean
-        required_documents:
-          - mri_report
-          - prior_conservative_treatment
-          - physician_recommendation
-          - imaging_report
-
-  - agent: documentation_validator_agent
-    purpose: >
-      Compare required policy documents with documents already provided
-      by the user.
-
-    model: amazon.nova-lite
-
-    input:
-      extracted_documents: document_intelligence_agent.output.extracted_documents
-      policy_requirements: policy_requirement_agent.output.policy_requirements
-
-    processing:
-      steps:
-        - match_document_types
-        - verify_required_evidence
-        - identify_missing_documents
-
-    output_schema:
-      validation_result:
-        status: COMPLETE | INCOMPLETE
-        available_documents: list
-        missing_documents: list
-
-  - agent: preauth_form_generator_agent
-    purpose: >
-      Generate a completed prior authorization request form using all
-      previously extracted and validated information.
-
-    model: amazon.nova-pro
-
-    input:
-      patient_insurance_profile: patient_insurance_agent.output.patient_insurance_profile
-      clinical_information: clinical_information_agent.output.clinical_information
-      requested_procedure: procedure_detection_agent.output.requested_procedure
-      prior_treatments: prior_treatment_history_agent.output.prior_treatments
-      expedited_review: urgency_detection_agent.output.expedited_review
-      validation_result: documentation_validator_agent.output.validation_result
-
-    processing:
-      steps:
-        - compile_all_information
-        - structure_preauth_request
-        - format_submission_ready_form
-
-    output_schema:
-      preauthorization_request_form:
-        patient_information: object
-        insurance_information: object
-        requested_procedure: object
-        diagnosis: object
-        clinical_rationale: string
-        prior_treatments: list
-        supporting_documents: list
-        expedited_review: object
-        completeness_status: string
-        provider_signature_required: true
+    trigger: determination == DENIED
 
   output:
-    description: Completed prior authorization request form ready for submission.
-    format: structured_json_or_pdf
+    description: Completed prior authorization package ready for submission.
+    files:
+      - prior_auth_form_{mrn}_{ts}.json
+      - prior_auth_form_{mrn}_{ts}.txt
+      - pre_auth_form_filled_{mrn}_{ts}.jpg
+      - appeal_letter_{mrn}_{ts}.txt   # only if denied
