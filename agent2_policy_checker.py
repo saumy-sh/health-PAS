@@ -3,8 +3,9 @@ agent2_policy_checker.py
 ─────────────────────────
 Agent 2 — Policy Query Requirement Checker
 • Validates that all fields required for a prior-auth query are present
+• Works from Agent 1's document list + merged fields
 • Checks: insurer, ICD-10, CPT, patient ID, physician, facility
-• Flags missing or malformed fields before hitting the policy RAG
+• Flags missing or malformed fields and traces which document they'd normally come from
 • Uses Nova Micro (text-only, fast, cheap)
 
 Input  : dict from Agent 1
@@ -21,7 +22,6 @@ from bedrock_client import invoke, MICRO_MODEL_ID
 # Validation rules
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Fields that MUST be present for a prior-auth request
 REQUIRED_FIELDS = [
     "patient_name",
     "patient_dob",
@@ -37,7 +37,6 @@ REQUIRED_FIELDS = [
     "date_of_proposed_treatment",
 ]
 
-# Fields that are important but won't block the pipeline
 RECOMMENDED_FIELDS = [
     "group_number",
     "member_id",
@@ -48,22 +47,38 @@ RECOMMENDED_FIELDS = [
     "total_estimated_cost",
 ]
 
-# ICD-10 pattern: letter + 2 digits + optional dot + optional alphanumeric
-ICD10_PATTERN = re.compile(r"^[A-Z]\d{2}(\.\d+)?$", re.IGNORECASE)
+# Maps a required field to the document type that typically contains it
+FIELD_TO_DOCUMENT = {
+    "patient_name":               "Patient Information Sheet",
+    "patient_dob":                "Patient Information Sheet",
+    "patient_mrn":                "Patient Information Sheet / Lab Report",
+    "insurer":                    "Insurance Card / Patient Information Sheet",
+    "policy_number":              "Insurance Card",
+    "diagnosis":                  "Doctor Notes / Pretreatment Estimate",
+    "icd10":                      "Doctor Notes / Pretreatment Estimate",
+    "procedure":                  "Doctor Notes / Pretreatment Estimate",
+    "cpt":                        "Pretreatment Estimate / Doctor Notes",
+    "ordering_physician":         "Doctor Notes / Pretreatment Estimate",
+    "hospital":                   "Doctor Notes / Pretreatment Estimate",
+    "date_of_proposed_treatment": "Pretreatment Estimate / Doctor Notes",
+    "group_number":               "Insurance Card",
+    "member_id":                  "Insurance Card",
+    "physician_specialty":        "Doctor Notes / Pretreatment Estimate",
+    "physician_phone":            "Pretreatment Estimate",
+    "prior_treatments":           "Doctor Notes / Pretreatment Estimate",
+    "symptom_duration_weeks":     "Doctor Notes",
+    "total_estimated_cost":       "Pretreatment Estimate",
+}
 
-# CPT pattern: 5 digits, optionally followed by modifier (e.g. 72148-26)
-CPT_PATTERN = re.compile(r"^\d{5}(-\d+)?$")
+ICD10_PATTERN = re.compile(r"^[A-Z]\d{2}(\.\d+)?$", re.IGNORECASE)
+CPT_PATTERN   = re.compile(r"^\d{5}(-\d+)?$")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Local validation (no LLM needed)
+# Local validation
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _local_validate(data: dict) -> tuple:
-    """
-    Pure-Python field presence + format checks.
-    Returns (missing_required, missing_recommended, format_warnings).
-    """
     missing_required    = []
     missing_recommended = []
     format_warnings     = []
@@ -71,14 +86,19 @@ def _local_validate(data: dict) -> tuple:
     for field in REQUIRED_FIELDS:
         val = data.get(field)
         if not val or (isinstance(val, list) and len(val) == 0):
-            missing_required.append(field)
+            missing_required.append({
+                "field":             field,
+                "suggested_document": FIELD_TO_DOCUMENT.get(field, "Unknown"),
+            })
 
     for field in RECOMMENDED_FIELDS:
         val = data.get(field)
         if not val or (isinstance(val, list) and len(val) == 0):
-            missing_recommended.append(field)
+            missing_recommended.append({
+                "field":             field,
+                "suggested_document": FIELD_TO_DOCUMENT.get(field, "Unknown"),
+            })
 
-    # Format checks
     icd10 = data.get("icd10", "")
     if icd10 and not ICD10_PATTERN.match(str(icd10)):
         format_warnings.append(f"ICD-10 code '{icd10}' may be malformed")
@@ -94,8 +114,24 @@ def _local_validate(data: dict) -> tuple:
     return missing_required, missing_recommended, format_warnings
 
 
+def _check_documents(data: dict) -> list:
+    """
+    Check documents_present from Agent 1.
+    Returns list of warning dicts for missing documents.
+    """
+    docs     = data.get("documents_present", {})
+    warnings = []
+    for doc, present in docs.items():
+        if not present:
+            warnings.append({
+                "document": doc,
+                "warning":  f"Document not found: {doc}",
+            })
+    return warnings
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM sanity check — Nova Micro reviews the extracted fields for coherence
+# LLM sanity check — now includes document list context
 # ─────────────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = [
@@ -111,47 +147,57 @@ SYSTEM_PROMPT = [
 
 
 def _llm_sanity_check(data: dict) -> dict:
-    """
-    Ask Nova Micro to review the data for logical inconsistencies.
-    Returns dict: { "issues": [...], "overall_quality": "good|fair|poor" }
-    """
-    # Only send the key clinical + insurance fields (keep token count low)
+    # Build a summary of documents found and their key content
+    doc_summary = []
+    for doc in data.get("documents", []):
+        doc_summary.append({
+            "document_type": doc.get("document_type"),
+            "fields_present": list(doc.get("content", {}).keys()),
+        })
+
     review_subset = {
-        "patient_name":     data.get("patient_name"),
-        "patient_dob":      data.get("patient_dob"),
-        "insurer":          data.get("insurer"),
-        "diagnosis":        data.get("diagnosis"),
-        "icd10_codes":      data.get("icd10_codes"),
-        "procedure":        data.get("procedure"),
-        "cpt_codes":        data.get("cpt_codes"),
-        "ordering_physician": data.get("ordering_physician"),
+        "patient_name":        data.get("patient_name"),
+        "patient_dob":         data.get("patient_dob"),
+        "insurer":             data.get("insurer"),
+        "diagnosis":           data.get("diagnosis"),
+        "icd10_codes":         data.get("icd10_codes"),
+        "procedure":           data.get("procedure"),
+        "cpt_codes":           data.get("cpt_codes"),
+        "ordering_physician":  data.get("ordering_physician"),
         "physician_specialty": data.get("physician_specialty"),
-        "hospital":         data.get("hospital"),
-        "prior_treatments": data.get("prior_treatments"),
+        "hospital":            data.get("hospital"),
+        "prior_treatments":    data.get("prior_treatments"),
         "total_estimated_cost": data.get("total_estimated_cost"),
+        "documents_found":     doc_summary,
     }
 
     prompt = f"""Review the following extracted prior-authorization data for quality.
+
+Documents extracted:
+{json.dumps(doc_summary, indent=2)}
+
+Merged data:
+{json.dumps({k: v for k, v in review_subset.items() if k != 'documents_found'}, indent=2)}
+
 Check:
 1. Do the ICD-10 codes match the stated diagnosis?
 2. Do the CPT codes match the requested procedure?
 3. Are the physician specialty and procedure consistent?
 4. Are there any obviously wrong or suspicious values?
-
-Data:
-{json.dumps(review_subset, indent=2)}
+5. Are there critical documents missing that would be expected for a prior-auth?
+6. Is the data consistent across the different documents?
 
 Return JSON:
 {{
   "issues": [string],
   "icd10_procedure_match": true | false,
   "cpt_procedure_match": true | false,
+  "cross_document_consistency": true | false,
   "overall_quality": "good" | "fair" | "poor",
   "recommendation": string
 }}"""
 
     messages = [{"role": "user", "content": [{"text": prompt}]}]
-
     raw = invoke(
         model_id=MICRO_MODEL_ID,
         messages=messages,
@@ -176,38 +222,28 @@ Return JSON:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run(agent1_output: dict) -> dict:
-    """
-    Agent 2 entry point.
-
-    Parameters
-    ----------
-    agent1_output : dict — output from Agent 1
-
-    Returns
-    -------
-    dict {
-        "ready"       : bool   — True if all required fields present + quality good,
-        "missing_required"    : list of missing required field names,
-        "missing_recommended" : list of missing recommended field names,
-        "format_warnings"     : list of format issue strings,
-        "llm_review"  : dict   — Nova Micro sanity check result,
-        "data"        : dict   — original agent1_output passed through
-    }
-    """
     print("\n[Agent 2] Policy Query Requirement Checker — START")
 
     missing_req, missing_rec, fmt_warns = _local_validate(agent1_output)
+    doc_warnings = _check_documents(agent1_output)
 
-    print(f"  Missing required    : {missing_req or 'None'}")
-    print(f"  Missing recommended : {missing_rec or 'None'}")
-    print(f"  Format warnings     : {fmt_warns or 'None'}")
+    if missing_req:
+        print("  Missing required fields:")
+        for m in missing_req:
+            print(f"    - {m['field']} → expected in: {m['suggested_document']}")
+    else:
+        print("  Missing required: None")
+
+    if doc_warnings:
+        print(f"  Missing documents: {[w['document'] for w in doc_warnings]}")
+
+    print(f"  Format warnings : {fmt_warns or 'None'}")
 
     print("[Agent 2] Running LLM sanity check via Nova Micro...")
     llm_review = _llm_sanity_check(agent1_output)
     print(f"  LLM overall quality : {llm_review.get('overall_quality')}")
     print(f"  LLM issues          : {llm_review.get('issues')}")
 
-    # Ready if: no missing required fields AND quality is not 'poor'
     ready = (
         len(missing_req) == 0
         and llm_review.get("overall_quality", "fair") != "poor"
@@ -215,9 +251,10 @@ def run(agent1_output: dict) -> dict:
 
     output = {
         "ready":                ready,
-        "missing_required":     missing_req,
-        "missing_recommended":  missing_rec,
+        "missing_required":     missing_req,      # list of {field, suggested_document}
+        "missing_recommended":  missing_rec,      # list of {field, suggested_document}
         "format_warnings":      fmt_warns,
+        "doc_warnings":         doc_warnings,     # list of {document, warning}
         "llm_review":           llm_review,
         "data":                 agent1_output,
     }
@@ -232,29 +269,38 @@ def run(agent1_output: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Mock Agent 1 output for testing
     mock_input = {
         "patient_name": "John R. Doe",
         "patient_dob": "1985-05-12",
         "patient_mrn": "PT-88293",
         "insurer": "BlueCross BlueShield",
         "policy_number": "BCBS-99001122",
-        "group_number": "8800221",
-        "member_id": "BCBS-9900122",
         "diagnosis": "Lumbar Radiculopathy",
         "icd10": "M54.16",
         "icd10_codes": ["M54.16"],
         "procedure": "MRI Lumbar Spine Without Contrast",
         "cpt": "72148",
-        "cpt_codes": ["72148", "72148-26", "99204", "97161"],
+        "cpt_codes": ["72148"],
         "ordering_physician": "Dr. Sarah Jenkins",
         "physician_specialty": "Orthopedic Surgery",
-        "physician_phone": "555-010-8899",
         "hospital": "Metropolitan General Hospital",
         "date_of_proposed_treatment": "2024-03-15",
         "total_estimated_cost": 2025,
-        "prior_treatments": ["NSAIDs - 4 weeks - minimal relief", "Physical Therapy - 3 weeks"],
-        "symptom_duration_weeks": 7,
+        "prior_treatments": ["NSAIDs 4 weeks", "PT 3 weeks"],
+        "documents_present": {
+            "lab_report": True,
+            "doctor_notes": True,
+            "patient_info": True,
+            "insurance_card": True,
+            "pretreatment_estimate": True,
+            "prior_treatment_documentation": True,
+            "procedure_order": True,
+            "physician_referral": False,
+        },
+        "documents": [
+            {"document_type": "Lab Report", "content": {"patient_name": "John R. Doe", "hba1c": "5.6%"}},
+            {"document_type": "Doctor Notes", "content": {"diagnosis": "Lumbar Radiculopathy", "icd10_codes": ["M54.16"]}},
+        ],
     }
     result = run(mock_input)
     print(json.dumps({k: v for k, v in result.items() if k != "data"}, indent=2))

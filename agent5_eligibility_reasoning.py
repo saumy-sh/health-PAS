@@ -66,8 +66,10 @@ Policy Reasoning   : {policy_analysis.get('reasoning')}
 
 ═══ DOCUMENTATION STATUS (from Agent 4) ═══
 All Docs Present   : {doc_status.get('all_docs_present')}
+Documents on File  : {json.dumps(data.get('documents_present', {}))}
 Missing Docs       : {json.dumps(doc_status.get('missing_docs', []))}
 Blockers           : {json.dumps(doc_status.get('blockers', []))}
+Missing Information: {json.dumps(doc_status.get('missing_information', []))}
 
 Now perform a full eligibility determination. Return JSON:
 {{

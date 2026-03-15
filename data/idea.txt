@@ -44,5 +44,8 @@ Appeal Agent (if rejected)
 tasks
  - create fake data [done]
  - make the pipeline 
- - make fake insurance duplicate site
- - deploy
+ - make the ui
+ - connect s3 and ec2 instance and deploy
+
+current problem:
+agent1 has fields for pre-defined documents and bool value for each(1 if present else 0). but this way it becomes specific and not general. also suppose some document is not present but when agent3 finds the policy requirements maybe that document is not required necessarily for pre-auth. how to overcome these shortcomings? i want the agents to have info from each document along with document tag,i.e, what document contains. so that when checking for what documents we have and are required actually for the pre-auth approval, it can use that info.

@@ -61,7 +61,6 @@ def get_client():
             region_name=AWS_REGION,
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            # NOTE: Do NOT pass aws_session_token here.
             # Permanent IAM user keys (from .env) never expire.
             # If your sandbox only gives you temporary keys, also add:
             aws_session_token=os.getenv("AWS_SESSION_TOKEN"),

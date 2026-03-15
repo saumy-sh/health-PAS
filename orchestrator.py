@@ -12,6 +12,7 @@ Or import and call run_pipeline(doc_paths) from another script.
 
 import json
 from datetime import datetime
+from pathlib import Path
 
 # ── Import all agents ──────────────────────────────────────────────────────────
 import agent1_document_intelligence  as agent1
@@ -35,9 +36,11 @@ DOC_PATHS = {
     "patient_info":          "./data/patient_data/patient_ai.png",
     "insurance_card":        "./data/patient_data/insurance_card_ai.png",
     "pretreatment_estimate": "./data/patient_data/medical_pretreatment_estimate_ai.pdf",
+    "prescription":          "./data/patient_data/prescription_ai.png",
+    "referral_letter":       "./data/patient_data/physician_referral.png",
 }
 
-OUTPUT_DIR = "."   # directory for saved forms and appeal letters
+OUTPUT_DIR = "./output"   # directory for saved forms and appeal letters
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +69,11 @@ def run_pipeline(doc_paths: dict = None, output_dir: str = ".") -> dict:
     dict — full pipeline result with all intermediate outputs
     """
     doc_paths  = doc_paths or DOC_PATHS
+
+    # Ensure output directory exists (all saved artifacts should go here)
+    output_dir = str(Path(output_dir))
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
     start_time = datetime.now()
 
     print("\n" + "#" * 70)
@@ -107,6 +115,15 @@ def run_pipeline(doc_paths: dict = None, output_dir: str = ".") -> dict:
     a3_enriched = dict(a3)
     a3_enriched["policy_analysis"] = a3.get("policy_analysis", {})
     a4 = agent4.run(a3_enriched)
+    if not a4.get("can_proceed", True):
+        print("\n[PIPELINE HALTED] Missing required documents.")
+        print("Please collect the following and re-run:\n")
+        for doc in a4.get("missing_docs", []):
+            print(f"  * {doc}")
+        results["pipeline_status"] = "HALTED_MISSING_DOCUMENTS"
+        results["missing_docs"]    = a4.get("missing_docs", [])
+        results["halted_at"]       = "agent4"
+        return results
     results["agent4"] = a4
     _print_stage(4, "Document Requirement Checker", "DONE")
 
@@ -140,17 +157,13 @@ def run_pipeline(doc_paths: dict = None, output_dir: str = ".") -> dict:
     # ── STAGE 9: Appeal (conditional) ─────────────────────────────────────────
     _print_stage(9, "Appeal Agent")
     decision = a8.get("decision", "")
-    if decision in ("DENIED", "MORE_INFO_NEEDED"):
-        _print_stage(9, "Appeal Agent — TRIGGERED", "RUNNING")
-        a9 = agent9.run(a8, eligibility=a5)
+    if a5.get("determination") == "DENIED":
+        a9 = agent9.run(a8, eligibility=a5, output_dir=output_dir)
     else:
-        print(f"  Decision is '{decision}' — appeal not needed.")
         a9 = {
             "appeal_needed": False,
-            "decision":      decision,
-            "message":       f"No appeal required. Decision: {decision}",
+            "message": f"No appeal required. Determination: {a5.get('determination')}",
         }
-        _print_stage(9, "Appeal Agent", "SKIP")
     results["agent9"] = a9
 
     # ── Final Summary ──────────────────────────────────────────────────────────
@@ -208,9 +221,9 @@ def _safe_serialize(obj):
 if __name__ == "__main__":
     results = run_pipeline(DOC_PATHS, output_dir=OUTPUT_DIR)
 
-    # Save full results
+    # Save full results to the configured output directory
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_file = f"pipeline_results_{ts}.json"
+    out_file = str(Path(OUTPUT_DIR) / f"pipeline_results_{ts}.json")
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(_safe_serialize(results), f, indent=2)
     print(f"📁 Full pipeline results saved to: {out_file}")

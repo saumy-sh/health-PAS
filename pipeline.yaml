@@ -1,0 +1,274 @@
+pipeline:
+  name: AI_PreAuthorization_Preparation_System
+  description: >
+    AI pipeline that analyzes patient medical documents and insurance information,
+    determines if a requested treatment requires prior authorization, validates
+    required documentation, and generates a completed pre-authorization request form.
+
+  input:
+    description: >
+      User uploads all available patient documents. No structured inputs required.
+    schema:
+      documents:
+        type: list
+        description: Uploaded patient documents
+        items:
+          document_name: string
+          file_type: pdf | image | doc
+
+  stages:
+
+  - agent: document_intelligence_agent
+    purpose: >
+      Extract structured information from each uploaded medical or insurance document.
+      Identify document type and extract relevant structured fields.
+
+    model: amazon.nova-pro (multimodal)
+
+    input:
+      documents: pipeline.input.documents
+
+    processing:
+      steps:
+        - classify_document_type
+        - extract_structured_content
+        - extract_raw_text
+
+    document_types_supported:
+      - insurance_card
+      - prescription
+      - lab_report
+      - imaging_report
+      - mri_report
+      - doctor_notes
+      - discharge_summary
+      - therapy_report
+      - treatment_estimate
+      - clinical_notes
+      - referral_letter
+      - hospital_bill
+      - unknown
+
+    output_schema:
+      extracted_documents:
+        type: list
+        items:
+          document_name: string
+          document_type: string
+          content: object
+          raw_text: string
+          tags: list
+
+  - agent: patient_insurance_agent
+    purpose: >
+      Compile patient demographics and insurance details from extracted documents.
+
+    model: amazon.nova-lite
+
+    input:
+      extracted_documents: document_intelligence_agent.output.extracted_documents
+
+    processing:
+      steps:
+        - locate_insurance_card
+        - extract_patient_demographics
+        - extract_policy_information
+        - validate_member_id
+
+    output_schema:
+      patient_insurance_profile:
+        patient_name: string
+        date_of_birth: string
+        insurance_provider: string
+        member_id: string
+        policy_number: string
+        plan_type: string
+        prior_authorization_reference: optional_string
+
+  - agent: clinical_information_agent
+    purpose: >
+      Identify the patient's diagnosis, clinical rationale, and supporting
+      medical evidence from documents.
+
+    model: amazon.nova-pro
+
+    input:
+      extracted_documents: document_intelligence_agent.output.extracted_documents
+
+    processing:
+      steps:
+        - extract_primary_diagnosis
+        - detect_icd10_codes
+        - extract_clinical_rationale
+        - collect_supporting_evidence
+
+    output_schema:
+      clinical_information:
+        primary_diagnosis:
+          description: string
+          icd10_code: string
+        supporting_evidence:
+          lab_results: list
+          imaging_findings: list
+          physician_notes: list
+          clinical_summary: string
+
+  - agent: procedure_detection_agent
+    purpose: >
+      Detect the medical procedure, treatment, or medication for which
+      prior authorization is likely being requested.
+
+    model: amazon.nova-pro
+
+    input:
+      extracted_documents: document_intelligence_agent.output.extracted_documents
+
+    processing:
+      steps:
+        - analyze_doctor_notes
+        - analyze_treatment_estimate
+        - detect_recommended_procedure
+        - infer_procedure_codes
+
+    output_schema:
+      requested_procedure:
+        procedure_name: string
+        cpt_code: optional_string
+        hcpcs_code: optional_string
+        ndc_code: optional_string
+        dosage: optional_string
+        frequency: optional_string
+        duration: optional_string
+        confidence_score: float
+
+  - agent: prior_treatment_history_agent
+    purpose: >
+      Identify past treatments attempted and their outcomes, which insurers
+      often require before approving advanced procedures.
+
+    model: amazon.nova-pro
+
+    input:
+      extracted_documents: document_intelligence_agent.output.extracted_documents
+
+    processing:
+      steps:
+        - detect_previous_medications
+        - detect_physical_therapy
+        - detect_other_conservative_treatments
+        - extract_treatment_outcomes
+
+    output_schema:
+      prior_treatments:
+        treatments:
+          - treatment_name: string
+            duration: string
+            outcome: string
+            reason_for_discontinuation: optional_string
+
+  - agent: urgency_detection_agent
+    purpose: >
+      Determine if expedited review should be requested based on clinical risk
+      described in medical notes.
+
+    model: amazon.nova-lite
+
+    input:
+      clinical_information: clinical_information_agent.output.clinical_information
+
+    processing:
+      steps:
+        - analyze_clinical_notes_for_risk
+        - detect_emergency_indicators
+
+    output_schema:
+      expedited_review:
+        requested: boolean
+        justification: optional_string
+
+  - agent: policy_requirement_agent
+    purpose: >
+      Retrieve insurance policy rules and determine required documentation
+      for the detected procedure.
+
+    model: amazon.nova-pro
+
+    input:
+      insurance_provider: patient_insurance_agent.output.patient_insurance_profile.insurance_provider
+      procedure: procedure_detection_agent.output.requested_procedure
+
+    processing:
+      steps:
+        - retrieve_policy_documents
+        - identify_pre_auth_requirement
+        - list_required_documents
+
+    output_schema:
+      policy_requirements:
+        prior_authorization_required: boolean
+        required_documents:
+          - mri_report
+          - prior_conservative_treatment
+          - physician_recommendation
+          - imaging_report
+
+  - agent: documentation_validator_agent
+    purpose: >
+      Compare required policy documents with documents already provided
+      by the user.
+
+    model: amazon.nova-lite
+
+    input:
+      extracted_documents: document_intelligence_agent.output.extracted_documents
+      policy_requirements: policy_requirement_agent.output.policy_requirements
+
+    processing:
+      steps:
+        - match_document_types
+        - verify_required_evidence
+        - identify_missing_documents
+
+    output_schema:
+      validation_result:
+        status: COMPLETE | INCOMPLETE
+        available_documents: list
+        missing_documents: list
+
+  - agent: preauth_form_generator_agent
+    purpose: >
+      Generate a completed prior authorization request form using all
+      previously extracted and validated information.
+
+    model: amazon.nova-pro
+
+    input:
+      patient_insurance_profile: patient_insurance_agent.output.patient_insurance_profile
+      clinical_information: clinical_information_agent.output.clinical_information
+      requested_procedure: procedure_detection_agent.output.requested_procedure
+      prior_treatments: prior_treatment_history_agent.output.prior_treatments
+      expedited_review: urgency_detection_agent.output.expedited_review
+      validation_result: documentation_validator_agent.output.validation_result
+
+    processing:
+      steps:
+        - compile_all_information
+        - structure_preauth_request
+        - format_submission_ready_form
+
+    output_schema:
+      preauthorization_request_form:
+        patient_information: object
+        insurance_information: object
+        requested_procedure: object
+        diagnosis: object
+        clinical_rationale: string
+        prior_treatments: list
+        supporting_documents: list
+        expedited_review: object
+        completeness_status: string
+        provider_signature_required: true
+
+  output:
+    description: Completed prior authorization request form ready for submission.
+    format: structured_json_or_pdf

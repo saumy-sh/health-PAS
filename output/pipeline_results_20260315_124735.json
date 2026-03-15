@@ -1,0 +1,804 @@
+{
+  "agent1": {
+    "patient_name": "John R. Doe",
+    "patient_dob": "1985-05-12",
+    "patient_mrn": "PT-88293",
+    "patient_gender": "Male",
+    "patient_address": "12 Maple St, Boston, MA 02118",
+    "patient_phone": "(555) 123-4567",
+    "patient_email": "j.doe85@example.com",
+    "emergency_contact": "Jane Doe",
+    "insurer": "BlueCross BlueShield",
+    "plan_type": "PPO",
+    "policy_number": "BCBS-99001122",
+    "group_number": "1029384756",
+    "member_id": "PT-88293",
+    "copay_specialist": 50,
+    "diagnosis": "Lumbar Radiculopathy",
+    "icd10_codes": [
+      "M54.16"
+    ],
+    "icd10": "M54.16",
+    "procedure": "MRI Lumbar Spine without Contrast",
+    "cpt_codes": [
+      "72148",
+      "72148-26",
+      "99204",
+      "97161"
+    ],
+    "cpt": "72148",
+    "ordering_physician": "Dr. Sarah Jenkins",
+    "physician_specialty": "Orthopedic Surgery",
+    "physician_phone": "555-010-8899",
+    "prior_treatments": [
+      "NSAIDs (Ibuprofen) - 4 weeks - Minimal relief",
+      "Physical Therapy - 3 weeks - Symptoms persisted"
+    ],
+    "clinical_findings": "Positive straight leg raise test on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+    "symptom_duration_weeks": 7,
+    "pain_score": 99,
+    "hospital": "Metropolitan General Hospital",
+    "date_of_service": "2024-03-10",
+    "date_of_proposed_treatment": "2024-03-15",
+    "total_estimated_cost": 2025,
+    "cost_line_items": [
+      {
+        "description": "MRI Lumbar Spine Without Contrast",
+        "cpt_code": "72148",
+        "estimated_price": 1350
+      },
+      {
+        "description": "Radiologist Interpretation & Report",
+        "cpt_code": "72148-26",
+        "estimated_price": 250
+      },
+      {
+        "description": "Orthopedic Specialist Consultation",
+        "cpt_code": "99204",
+        "estimated_price": 220
+      },
+      {
+        "description": "Follow-up Physical Therapy Evaluation",
+        "cpt_code": "97161",
+        "estimated_price": 160
+      },
+      {
+        "description": "Prescription NSAID Therapy (Ibuprofen)",
+        "cpt_code": "N/A",
+        "estimated_price": 45
+      }
+    ],
+    "prescribed_medications": [
+      "Lyrica (Pregabalin) 75 mg capsules",
+      "Ibuprofen 600 mg tablets",
+      "Cyclobenzaprine 10 mg tablets"
+    ],
+    "lab_results": {
+      "hba1c": "5.6%",
+      "cholesterol_total": "182 mg/dL",
+      "ldl": "112 mg/dL",
+      "hdl": "48 mg/dL",
+      "triglycerides": "145 mg/dL",
+      "creatinine": "0.95 mg/dL",
+      "egfr": "92 mL/min",
+      "alt": "32 U/L",
+      "ast": "28 U/L"
+    },
+    "pharmacy": {
+      "pharmacy_name": "CVS Pharmacy",
+      "pharmacy_address": "100 Main St, Boston, MA",
+      "pharmacy_phone": "(555) 111-2222"
+    },
+    "documents_present": {
+      "lab_report": true,
+      "doctor_notes": true,
+      "patient_info": true,
+      "insurance_card": true,
+      "pretreatment_estimate": true,
+      "prior_treatment_documentation": true,
+      "procedure_order": true,
+      "physician_referral": false
+    },
+    "documents": [
+      {
+        "document_type": "Lab Report",
+        "content": {
+          "hba1c": "5.6%",
+          "cholesterol_total": "182 mg/dL",
+          "ldl": "112 mg/dL",
+          "hdl": "48 mg/dL",
+          "triglycerides": "145 mg/dL",
+          "creatinine": "0.95 mg/dL",
+          "egfr": "92 mL/min",
+          "alt": "32 U/L",
+          "ast": "28 U/L"
+        }
+      },
+      {
+        "document_type": "Doctor Notes",
+        "content": {
+          "diagnosis": "Lumbar Radiculopathy",
+          "icd10_codes": [
+            "M54.16"
+          ],
+          "chief_complaint": "Severe radiating lower back pain (sciatica) for 7 weeks",
+          "clinical_findings": "Positive straight leg raise test on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+          "prior_treatments": [
+            "NSAIDs (Ibuprofen) - 4 weeks - Minimal relief",
+            "Physical Therapy - 3 weeks - Symptoms persisted"
+          ],
+          "requested_procedure": "MRI Lumbar Spine without Contrast",
+          "cpt_codes": [
+            "72148",
+            "72148-26",
+            "99204",
+            "97161"
+          ],
+          "symptom_duration_weeks": 7,
+          "pain_score": 99,
+          "ordering_physician": "Dr. Sarah Jenkins",
+          "physician_specialty": "Orthopedic Surgery",
+          "physician_phone": "555-010-8899"
+        }
+      },
+      {
+        "document_type": "Patient Information Sheet",
+        "content": {
+          "patient_name": "John R. Doe",
+          "dob": "1985-05-12",
+          "gender": "Male",
+          "mrn": "PT-88293",
+          "address": "12 Maple St",
+          "city": "Boston",
+          "state": "MA",
+          "zip": "02118",
+          "phone": "(555) 123-4567",
+          "email": "j.doe85@example.com",
+          "emergency_contact": "Jane Doe"
+        }
+      },
+      {
+        "document_type": "Insurance Card",
+        "content": {
+          "insurer_name": "BlueCross BlueShield",
+          "plan_type": "PPO",
+          "policy_number": "BCBS-99001122",
+          "member_id": "PT-88293",
+          "group_number": "1029384756",
+          "copay_specialist": 50,
+          "copay_office_visit": 25,
+          "copay_er": 100,
+          "administered_by": "NovaCare PPO",
+          "underwritten_by": "HealthFirst Insurance Co."
+        }
+      },
+      {
+        "document_type": "Medical Pretreatment Estimate",
+        "content": {
+          "total_estimated_cost": 2025,
+          "line_items": [
+            {
+              "description": "MRI Lumbar Spine Without Contrast",
+              "cpt_code": "72148",
+              "estimated_price": 1350
+            },
+            {
+              "description": "Radiologist Interpretation & Report",
+              "cpt_code": "72148-26",
+              "estimated_price": 250
+            },
+            {
+              "description": "Orthopedic Specialist Consultation",
+              "cpt_code": "99204",
+              "estimated_price": 220
+            },
+            {
+              "description": "Follow-up Physical Therapy Evaluation",
+              "cpt_code": "97161",
+              "estimated_price": 160
+            },
+            {
+              "description": "Prescription NSAID Therapy (Ibuprofen)",
+              "cpt_code": "N/A",
+              "estimated_price": 45
+            }
+          ],
+          "cpt_codes": [
+            "72148",
+            "72148-26",
+            "99204",
+            "97161",
+            "N/A"
+          ],
+          "date_of_proposed_treatment": "2024-03-15",
+          "hospital_name": "Metropolitan General Hospital"
+        }
+      },
+      {
+        "document_type": "Pharmacy Information",
+        "content": {
+          "pharmacy_name": "CVS Pharmacy",
+          "pharmacy_address": "100 Main St, Boston, MA",
+          "pharmacy_phone": "(555) 111-2222"
+        }
+      }
+    ],
+    "extraction_confidence": "high",
+    "missing_fields": []
+  },
+  "agent2": {
+    "ready": true,
+    "missing_required": [],
+    "missing_recommended": [],
+    "format_warnings": [],
+    "doc_warnings": [
+      {
+        "document": "physician_referral",
+        "warning": "Document not found: physician_referral"
+      }
+    ],
+    "llm_review": {
+      "issues": [
+        "The CPT codes include '99204' which is an office or other outpatient visit code, not typically associated with an MRI procedure.",
+        "The 'total_estimated_cost' is unusually high for an MRI procedure without additional context or justification."
+      ],
+      "icd10_procedure_match": true,
+      "cpt_procedure_match": false,
+      "cross_document_consistency": true,
+      "overall_quality": "fair",
+      "recommendation": "Verify the accuracy of the CPT codes and the justification for the high estimated cost."
+    },
+    "data": {
+      "patient_name": "John R. Doe",
+      "patient_dob": "1985-05-12",
+      "patient_mrn": "PT-88293",
+      "patient_gender": "Male",
+      "patient_address": "12 Maple St, Boston, MA 02118",
+      "patient_phone": "(555) 123-4567",
+      "patient_email": "j.doe85@example.com",
+      "emergency_contact": "Jane Doe",
+      "insurer": "BlueCross BlueShield",
+      "plan_type": "PPO",
+      "policy_number": "BCBS-99001122",
+      "group_number": "1029384756",
+      "member_id": "PT-88293",
+      "copay_specialist": 50,
+      "diagnosis": "Lumbar Radiculopathy",
+      "icd10_codes": [
+        "M54.16"
+      ],
+      "icd10": "M54.16",
+      "procedure": "MRI Lumbar Spine without Contrast",
+      "cpt_codes": [
+        "72148",
+        "72148-26",
+        "99204",
+        "97161"
+      ],
+      "cpt": "72148",
+      "ordering_physician": "Dr. Sarah Jenkins",
+      "physician_specialty": "Orthopedic Surgery",
+      "physician_phone": "555-010-8899",
+      "prior_treatments": [
+        "NSAIDs (Ibuprofen) - 4 weeks - Minimal relief",
+        "Physical Therapy - 3 weeks - Symptoms persisted"
+      ],
+      "clinical_findings": "Positive straight leg raise test on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+      "symptom_duration_weeks": 7,
+      "pain_score": 99,
+      "hospital": "Metropolitan General Hospital",
+      "date_of_service": "2024-03-10",
+      "date_of_proposed_treatment": "2024-03-15",
+      "total_estimated_cost": 2025,
+      "cost_line_items": [
+        {
+          "description": "MRI Lumbar Spine Without Contrast",
+          "cpt_code": "72148",
+          "estimated_price": 1350
+        },
+        {
+          "description": "Radiologist Interpretation & Report",
+          "cpt_code": "72148-26",
+          "estimated_price": 250
+        },
+        {
+          "description": "Orthopedic Specialist Consultation",
+          "cpt_code": "99204",
+          "estimated_price": 220
+        },
+        {
+          "description": "Follow-up Physical Therapy Evaluation",
+          "cpt_code": "97161",
+          "estimated_price": 160
+        },
+        {
+          "description": "Prescription NSAID Therapy (Ibuprofen)",
+          "cpt_code": "N/A",
+          "estimated_price": 45
+        }
+      ],
+      "prescribed_medications": [
+        "Lyrica (Pregabalin) 75 mg capsules",
+        "Ibuprofen 600 mg tablets",
+        "Cyclobenzaprine 10 mg tablets"
+      ],
+      "lab_results": {
+        "hba1c": "5.6%",
+        "cholesterol_total": "182 mg/dL",
+        "ldl": "112 mg/dL",
+        "hdl": "48 mg/dL",
+        "triglycerides": "145 mg/dL",
+        "creatinine": "0.95 mg/dL",
+        "egfr": "92 mL/min",
+        "alt": "32 U/L",
+        "ast": "28 U/L"
+      },
+      "pharmacy": {
+        "pharmacy_name": "CVS Pharmacy",
+        "pharmacy_address": "100 Main St, Boston, MA",
+        "pharmacy_phone": "(555) 111-2222"
+      },
+      "documents_present": {
+        "lab_report": true,
+        "doctor_notes": true,
+        "patient_info": true,
+        "insurance_card": true,
+        "pretreatment_estimate": true,
+        "prior_treatment_documentation": true,
+        "procedure_order": true,
+        "physician_referral": false
+      },
+      "documents": [
+        {
+          "document_type": "Lab Report",
+          "content": {
+            "hba1c": "5.6%",
+            "cholesterol_total": "182 mg/dL",
+            "ldl": "112 mg/dL",
+            "hdl": "48 mg/dL",
+            "triglycerides": "145 mg/dL",
+            "creatinine": "0.95 mg/dL",
+            "egfr": "92 mL/min",
+            "alt": "32 U/L",
+            "ast": "28 U/L"
+          }
+        },
+        {
+          "document_type": "Doctor Notes",
+          "content": {
+            "diagnosis": "Lumbar Radiculopathy",
+            "icd10_codes": [
+              "M54.16"
+            ],
+            "chief_complaint": "Severe radiating lower back pain (sciatica) for 7 weeks",
+            "clinical_findings": "Positive straight leg raise test on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+            "prior_treatments": [
+              "NSAIDs (Ibuprofen) - 4 weeks - Minimal relief",
+              "Physical Therapy - 3 weeks - Symptoms persisted"
+            ],
+            "requested_procedure": "MRI Lumbar Spine without Contrast",
+            "cpt_codes": [
+              "72148",
+              "72148-26",
+              "99204",
+              "97161"
+            ],
+            "symptom_duration_weeks": 7,
+            "pain_score": 99,
+            "ordering_physician": "Dr. Sarah Jenkins",
+            "physician_specialty": "Orthopedic Surgery",
+            "physician_phone": "555-010-8899"
+          }
+        },
+        {
+          "document_type": "Patient Information Sheet",
+          "content": {
+            "patient_name": "John R. Doe",
+            "dob": "1985-05-12",
+            "gender": "Male",
+            "mrn": "PT-88293",
+            "address": "12 Maple St",
+            "city": "Boston",
+            "state": "MA",
+            "zip": "02118",
+            "phone": "(555) 123-4567",
+            "email": "j.doe85@example.com",
+            "emergency_contact": "Jane Doe"
+          }
+        },
+        {
+          "document_type": "Insurance Card",
+          "content": {
+            "insurer_name": "BlueCross BlueShield",
+            "plan_type": "PPO",
+            "policy_number": "BCBS-99001122",
+            "member_id": "PT-88293",
+            "group_number": "1029384756",
+            "copay_specialist": 50,
+            "copay_office_visit": 25,
+            "copay_er": 100,
+            "administered_by": "NovaCare PPO",
+            "underwritten_by": "HealthFirst Insurance Co."
+          }
+        },
+        {
+          "document_type": "Medical Pretreatment Estimate",
+          "content": {
+            "total_estimated_cost": 2025,
+            "line_items": [
+              {
+                "description": "MRI Lumbar Spine Without Contrast",
+                "cpt_code": "72148",
+                "estimated_price": 1350
+              },
+              {
+                "description": "Radiologist Interpretation & Report",
+                "cpt_code": "72148-26",
+                "estimated_price": 250
+              },
+              {
+                "description": "Orthopedic Specialist Consultation",
+                "cpt_code": "99204",
+                "estimated_price": 220
+              },
+              {
+                "description": "Follow-up Physical Therapy Evaluation",
+                "cpt_code": "97161",
+                "estimated_price": 160
+              },
+              {
+                "description": "Prescription NSAID Therapy (Ibuprofen)",
+                "cpt_code": "N/A",
+                "estimated_price": 45
+              }
+            ],
+            "cpt_codes": [
+              "72148",
+              "72148-26",
+              "99204",
+              "97161",
+              "N/A"
+            ],
+            "date_of_proposed_treatment": "2024-03-15",
+            "hospital_name": "Metropolitan General Hospital"
+          }
+        },
+        {
+          "document_type": "Pharmacy Information",
+          "content": {
+            "pharmacy_name": "CVS Pharmacy",
+            "pharmacy_address": "100 Main St, Boston, MA",
+            "pharmacy_phone": "(555) 111-2222"
+          }
+        }
+      ],
+      "extraction_confidence": "high",
+      "missing_fields": []
+    }
+  },
+  "agent3": {
+    "authorization_required": true,
+    "policy_analysis": {
+      "authorization_required": true,
+      "primary_cpt_requiring_auth": "72148",
+      "cpt_auth_status": {
+        "72148": "auth_required",
+        "72148-26": "auth_required",
+        "99204": "auth_required",
+        "97161": "auth_required"
+      },
+      "standard_clinical_criteria": {
+        "minimum_symptom_duration_weeks": 6,
+        "minimum_symptom_duration_met": true,
+        "actual_symptom_duration_weeks": 7,
+        "step_therapy_required": true,
+        "step_therapy_steps_required": [
+          "NSAIDs",
+          "Physical Therapy"
+        ],
+        "step_therapy_steps_completed": [
+          "NSAIDs",
+          "Physical Therapy"
+        ],
+        "step_therapy_met": true,
+        "step_therapy_gaps": [],
+        "clinical_exam_required": true,
+        "clinical_exam_findings_required": [
+          "Positive straight leg raise test"
+        ],
+        "clinical_exam_met": true,
+        "specialist_referral_required": false,
+        "specialist_referral_met": true,
+        "prior_imaging_required": false,
+        "prior_imaging_met": false,
+        "medication_trial_required": true,
+        "medication_trial_details": "NSAIDs for 4 weeks, Physical Therapy for 3 weeks",
+        "medication_trial_met": true
+      },
+      "criteria_met": [
+        "Minimum symptom duration met",
+        "Step therapy completed",
+        "Clinical exam findings met",
+        "Medication trial completed"
+      ],
+      "criteria_not_met": [
+        "Prior imaging not required but not completed"
+      ],
+      "required_documents": [
+        {
+          "document_name": "physician_referral",
+          "document_type": "Referral",
+          "info_to_include": "Referral from primary care physician or specialist to the ordering physician",
+          "currently_available": false
+        }
+      ],
+      "missing_documents": [
+        {
+          "document_name": "physician_referral",
+          "document_type": "Referral",
+          "info_required": "Referral from primary care physician or specialist to the ordering physician",
+          "why_needed": "Required to confirm the necessity of the procedure and the appropriateness of the ordering physician"
+        }
+      ],
+      "missing_information": [],
+      "unmet_requirements": [],
+      "approval_timeline_days": 7,
+      "validity_period_days": 90,
+      "applicable_copay": 50,
+      "submission_portal": "BlueCross BlueShield Provider Portal",
+      "policy_notes": "Ensure the referral document is submitted within the approval timeline to avoid delays.",
+      "likelihood_of_approval": "high",
+      "reasoning": "All clinical criteria and documentation requirements are met except for the physician referral, which is a standard requirement for this procedure."
+    },
+    "missing_documents": [
+      {
+        "document_name": "physician_referral",
+        "document_type": "Referral",
+        "info_required": "Referral from primary care physician or specialist to the ordering physician",
+        "why_needed": "Required to confirm the necessity of the procedure and the appropriateness of the ordering physician"
+      }
+    ],
+    "missing_information": [],
+    "unmet_requirements": [],
+    "criteria_not_met": [
+      "Prior imaging not required but not completed"
+    ],
+    "data": {
+      "patient_name": "John R. Doe",
+      "patient_dob": "1985-05-12",
+      "patient_mrn": "PT-88293",
+      "patient_gender": "Male",
+      "patient_address": "12 Maple St, Boston, MA 02118",
+      "patient_phone": "(555) 123-4567",
+      "patient_email": "j.doe85@example.com",
+      "emergency_contact": "Jane Doe",
+      "insurer": "BlueCross BlueShield",
+      "plan_type": "PPO",
+      "policy_number": "BCBS-99001122",
+      "group_number": "1029384756",
+      "member_id": "PT-88293",
+      "copay_specialist": 50,
+      "diagnosis": "Lumbar Radiculopathy",
+      "icd10_codes": [
+        "M54.16"
+      ],
+      "icd10": "M54.16",
+      "procedure": "MRI Lumbar Spine without Contrast",
+      "cpt_codes": [
+        "72148",
+        "72148-26",
+        "99204",
+        "97161"
+      ],
+      "cpt": "72148",
+      "ordering_physician": "Dr. Sarah Jenkins",
+      "physician_specialty": "Orthopedic Surgery",
+      "physician_phone": "555-010-8899",
+      "prior_treatments": [
+        "NSAIDs (Ibuprofen) - 4 weeks - Minimal relief",
+        "Physical Therapy - 3 weeks - Symptoms persisted"
+      ],
+      "clinical_findings": "Positive straight leg raise test on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+      "symptom_duration_weeks": 7,
+      "pain_score": 99,
+      "hospital": "Metropolitan General Hospital",
+      "date_of_service": "2024-03-10",
+      "date_of_proposed_treatment": "2024-03-15",
+      "total_estimated_cost": 2025,
+      "cost_line_items": [
+        {
+          "description": "MRI Lumbar Spine Without Contrast",
+          "cpt_code": "72148",
+          "estimated_price": 1350
+        },
+        {
+          "description": "Radiologist Interpretation & Report",
+          "cpt_code": "72148-26",
+          "estimated_price": 250
+        },
+        {
+          "description": "Orthopedic Specialist Consultation",
+          "cpt_code": "99204",
+          "estimated_price": 220
+        },
+        {
+          "description": "Follow-up Physical Therapy Evaluation",
+          "cpt_code": "97161",
+          "estimated_price": 160
+        },
+        {
+          "description": "Prescription NSAID Therapy (Ibuprofen)",
+          "cpt_code": "N/A",
+          "estimated_price": 45
+        }
+      ],
+      "prescribed_medications": [
+        "Lyrica (Pregabalin) 75 mg capsules",
+        "Ibuprofen 600 mg tablets",
+        "Cyclobenzaprine 10 mg tablets"
+      ],
+      "lab_results": {
+        "hba1c": "5.6%",
+        "cholesterol_total": "182 mg/dL",
+        "ldl": "112 mg/dL",
+        "hdl": "48 mg/dL",
+        "triglycerides": "145 mg/dL",
+        "creatinine": "0.95 mg/dL",
+        "egfr": "92 mL/min",
+        "alt": "32 U/L",
+        "ast": "28 U/L"
+      },
+      "pharmacy": {
+        "pharmacy_name": "CVS Pharmacy",
+        "pharmacy_address": "100 Main St, Boston, MA",
+        "pharmacy_phone": "(555) 111-2222"
+      },
+      "documents_present": {
+        "lab_report": true,
+        "doctor_notes": true,
+        "patient_info": true,
+        "insurance_card": true,
+        "pretreatment_estimate": true,
+        "prior_treatment_documentation": true,
+        "procedure_order": true,
+        "physician_referral": false
+      },
+      "documents": [
+        {
+          "document_type": "Lab Report",
+          "content": {
+            "hba1c": "5.6%",
+            "cholesterol_total": "182 mg/dL",
+            "ldl": "112 mg/dL",
+            "hdl": "48 mg/dL",
+            "triglycerides": "145 mg/dL",
+            "creatinine": "0.95 mg/dL",
+            "egfr": "92 mL/min",
+            "alt": "32 U/L",
+            "ast": "28 U/L"
+          }
+        },
+        {
+          "document_type": "Doctor Notes",
+          "content": {
+            "diagnosis": "Lumbar Radiculopathy",
+            "icd10_codes": [
+              "M54.16"
+            ],
+            "chief_complaint": "Severe radiating lower back pain (sciatica) for 7 weeks",
+            "clinical_findings": "Positive straight leg raise test on the right at 30 degrees. Normal neurological exam otherwise. Severe radicular pain described.",
+            "prior_treatments": [
+              "NSAIDs (Ibuprofen) - 4 weeks - Minimal relief",
+              "Physical Therapy - 3 weeks - Symptoms persisted"
+            ],
+            "requested_procedure": "MRI Lumbar Spine without Contrast",
+            "cpt_codes": [
+              "72148",
+              "72148-26",
+              "99204",
+              "97161"
+            ],
+            "symptom_duration_weeks": 7,
+            "pain_score": 99,
+            "ordering_physician": "Dr. Sarah Jenkins",
+            "physician_specialty": "Orthopedic Surgery",
+            "physician_phone": "555-010-8899"
+          }
+        },
+        {
+          "document_type": "Patient Information Sheet",
+          "content": {
+            "patient_name": "John R. Doe",
+            "dob": "1985-05-12",
+            "gender": "Male",
+            "mrn": "PT-88293",
+            "address": "12 Maple St",
+            "city": "Boston",
+            "state": "MA",
+            "zip": "02118",
+            "phone": "(555) 123-4567",
+            "email": "j.doe85@example.com",
+            "emergency_contact": "Jane Doe"
+          }
+        },
+        {
+          "document_type": "Insurance Card",
+          "content": {
+            "insurer_name": "BlueCross BlueShield",
+            "plan_type": "PPO",
+            "policy_number": "BCBS-99001122",
+            "member_id": "PT-88293",
+            "group_number": "1029384756",
+            "copay_specialist": 50,
+            "copay_office_visit": 25,
+            "copay_er": 100,
+            "administered_by": "NovaCare PPO",
+            "underwritten_by": "HealthFirst Insurance Co."
+          }
+        },
+        {
+          "document_type": "Medical Pretreatment Estimate",
+          "content": {
+            "total_estimated_cost": 2025,
+            "line_items": [
+              {
+                "description": "MRI Lumbar Spine Without Contrast",
+                "cpt_code": "72148",
+                "estimated_price": 1350
+              },
+              {
+                "description": "Radiologist Interpretation & Report",
+                "cpt_code": "72148-26",
+                "estimated_price": 250
+              },
+              {
+                "description": "Orthopedic Specialist Consultation",
+                "cpt_code": "99204",
+                "estimated_price": 220
+              },
+              {
+                "description": "Follow-up Physical Therapy Evaluation",
+                "cpt_code": "97161",
+                "estimated_price": 160
+              },
+              {
+                "description": "Prescription NSAID Therapy (Ibuprofen)",
+                "cpt_code": "N/A",
+                "estimated_price": 45
+              }
+            ],
+            "cpt_codes": [
+              "72148",
+              "72148-26",
+              "99204",
+              "97161",
+              "N/A"
+            ],
+            "date_of_proposed_treatment": "2024-03-15",
+            "hospital_name": "Metropolitan General Hospital"
+          }
+        },
+        {
+          "document_type": "Pharmacy Information",
+          "content": {
+            "pharmacy_name": "CVS Pharmacy",
+            "pharmacy_address": "100 Main St, Boston, MA",
+            "pharmacy_phone": "(555) 111-2222"
+          }
+        }
+      ],
+      "extraction_confidence": "high",
+      "missing_fields": []
+    }
+  },
+  "pipeline_status": "HALTED_MISSING_DOCUMENTS",
+  "missing_docs": [
+    {
+      "document_name": "physician_referral",
+      "document_type": "Referral",
+      "info_required": "Referral from primary care physician or specialist to the ordering physician",
+      "why_needed": "To establish the necessity and continuity of care for the requested procedure"
+    }
+  ],
+  "halted_at": "agent4"
+}
