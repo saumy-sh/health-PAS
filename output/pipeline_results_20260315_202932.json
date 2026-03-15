@@ -1,5 +1,0 @@
-{
-  "pipeline_status": "HALTED_EXTRACTION_FAILED",
-  "error": "An error occurred (ExpiredTokenException) when calling the InvokeModel operation: The security token included in the request is expired",
-  "halted_at": "agent1"
-}
