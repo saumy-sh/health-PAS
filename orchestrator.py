@@ -47,7 +47,7 @@ import agent6_form_filler            as agent6b     # EWA PDF form filler
 
 DOC_PATHS = {
     "lab_report":            "./data/patient_data/lab_report_ai.png",
-    "doctor_notes":          "./data/patient_data/doctor_notes_4week.png",
+    "doctor_notes":          "./data/patient_data/doctor_notes_ai.png",
     "patient_info":          "./data/patient_data/patient_ai.png",
     "insurance_card":        "./data/patient_data/insurance_card_ai.png",
     "pretreatment_estimate": "./data/patient_data/medical_pretreatment_estimate_ai.pdf",
