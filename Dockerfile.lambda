@@ -7,7 +7,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY . ${LAMBDA_TASK_ROOT}
 
-# Add both root AND backend to PYTHONPATH
-ENV PYTHONPATH=${LAMBDA_TASK_ROOT}:${LAMBDA_TASK_ROOT}/backend
+ENV PYTHONPATH=${LAMBDA_TASK_ROOT}
 
 CMD [ "backend.main.handler" ]
