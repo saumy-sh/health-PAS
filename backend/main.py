@@ -1,8 +1,38 @@
-import boto3
+"""
+main.py
+────────
+InsuranceHelper — FastAPI Backend Entry Point
+"""
+
+
+import sys
+print(">>> STEP 1: starting main.py", flush=True)
+
 from pathlib import Path
+print(">>> STEP 2: pathlib imported", flush=True)
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+print(">>> STEP 3: sys.path updated", flush=True)
+
+from fastapi import FastAPI
+print(">>> STEP 4: fastapi imported", flush=True)
+
+from backend.routes.analyse import router as analyse_router
+print(">>> STEP 5: router imported", flush=True)
+
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
+
+# ✅ Fixed import — use full package path
 from backend.routes.analyse import router as analyse_router
 
 app = FastAPI(
@@ -11,6 +41,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Lambda Handler
 handler = Mangum(app)
 
 app.add_middleware(
@@ -23,20 +54,13 @@ app.add_middleware(
 
 app.include_router(analyse_router)
 
-# S3 bucket for outputs
-S3_BUCKET = "insurance-helper-outputs"
-s3_client = boto3.client("s3", region_name="us-east-1")
+# ✅ Removed static files mount and output_path.mkdir
+# Output files will go to S3 instead
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "InsuranceHelper API"}
 
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "InsuranceHelper API"}
-
-def upload_to_s3(local_path: str, s3_key: str) -> str:
-    """Upload a file to S3 and return a presigned URL valid for 1 hour."""
-    s3_client.upload_file(local_path, S3_BUCKET, s3_key)
-    url = s3_client.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": S3_BUCKET, "Key": s3_key},
-        ExpiresIn=3600
-    )
-    return url

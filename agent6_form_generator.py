@@ -28,8 +28,8 @@ from pathlib import Path
 import os
 import tempfile
 
-from backend.main import upload_to_s3
-
+# NEW
+from backend.s3_utils import upload_to_s3
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas as rl_canvas

@@ -18,12 +18,6 @@ import sys
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-import agent1_document_intelligence as agent1
-import agent2_policy_checker        as agent2
-import agent3_policy_retrieval      as agent3
-import agent4_document_checker      as agent4
-import agent5_eligibility_reasoning as agent5
-import agent6_form_filler           as agent6
 
 router = APIRouter(prefix="/analyse", tags=["analysis"])
 
@@ -86,6 +80,8 @@ async def document_ocr(file_paths: List[str] = Body(...)): # Changed payload: Di
     Agent 1: Document Intelligence (OCR).
     Expects: List of absolute file paths. # Updated description
     """
+    import agent1_document_intelligence as agent1
+
     try:
         print(f"\n[SERVER] Agent 1 START: processing {len(file_paths)} files") # Added print
         result = await in_thread(agent1.run, file_paths) # Changed files to file_paths
@@ -103,6 +99,8 @@ async def policy_checker(agent1_result: Dict[str, Any] = Body(...)):
     Expects: Agent 1 result JSON.
     Returns: Agent 2 JSON output.
     """
+    import agent2_policy_checker as agent2
+
     try:
         print(f"\n[SERVER] Agent 2 START: processing Agent 1 result (size: {len(str(agent1_result))} chars)") # Added print
         result = await in_thread(agent2.run, agent1_result)
@@ -121,6 +119,8 @@ async def policy_retreiver(payload: Dict[str, Any] = Body(...)):
     The user said: "receive response from agent1 as well as agent2".
     Agent3.run(a2) already handles this if a2 contains the 'documents' from a1.
     """
+    import agent3_policy_retrieval as agent3
+
     try:
         print(f"\n[SERVER] Agent 3 START: processing payload (size: {len(str(payload))} chars)") # Added print
         # If the caller provides a combined object that matches Agent 2's output schema
@@ -138,6 +138,8 @@ async def document_checker(agent3_result: Dict[str, Any] = Body(...)):
     Agent 4: Document Checker.
     Expects: Agent 3 result JSON.
     """
+    import agent4_document_checker as agent4
+
     try:
         print(f"\n[SERVER] Agent 4 START: processing Agent 3 result (size: {len(str(agent3_result))} chars)") # Added print
         result = await in_thread(agent4.run, agent3_result)
@@ -154,6 +156,8 @@ async def eligibility_reasoning(agent4_result: Dict[str, Any] = Body(...)):
     Agent 5: Eligibility Reasoning.
     Expects: Agent 4 result JSON.
     """
+    import agent5_eligibility_reasoning as agent5
+
     try:
         result = await in_thread(agent5.run, agent4_result)
         return _safe_serialize(result)
@@ -167,6 +171,8 @@ async def form_filler(agent5_result: Dict[str, Any] = Body(...)):
     Agent 6: Form Filler.
     Expects: Agent 5 result JSON.
     """
+    import agent6_form_filler as agent6
+
     try:
         print(f"\n[SERVER] Agent 6 START")
         result = await in_thread(agent6.run, agent5_result)

@@ -29,8 +29,8 @@ from pathlib import Path
 import os
 import tempfile
 
-from backend.main import upload_to_s3
-
+# NEW
+from backend.s3_utils import upload_to_s3
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import FreeText
 
