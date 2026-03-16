@@ -63,15 +63,10 @@ SYSTEM_PROMPT = [
 ]
 
 
-def _build_policy_prompt(fields: dict, documents: list) -> str:
-    doc_summaries = "\n\n".join(
-        f"[{d['document_type']}]\n{d['content']}"
-        for d in documents
-    )
-
+def _build_policy_prompt(fields: dict) -> str:
     return f"""A patient is requesting prior authorization for a medical procedure/treatment/medication.
 
-POLICY SEARCH FIELDS (from submitted documents):
+POLICY SEARCH FIELDS (extracted from submitted documents):
   Insurer           : {fields.get('insurer_name')}
   Plan type         : {fields.get('plan_type')}
   Policy number     : {fields.get('policy_number')}
@@ -83,10 +78,7 @@ POLICY SEARCH FIELDS (from submitted documents):
   CPT codes         : {fields.get('cpt_codes')}
   Ordering physician: {fields.get('ordering_physician')} ({fields.get('physician_specialty')})
 
-DOCUMENT SUMMARIES:
-{doc_summaries}
-
-Based on the above, determine:
+Based on the above structured data, determine:
 1. Does this procedure/treatment require prior authorization? (Most imaging, surgeries,
    specialist procedures, and expensive medications do.)
 2. What is the specific procedure/treatment/medication for which pre-auth is being requested?
@@ -172,10 +164,10 @@ def run(agent2_output: dict) -> dict:
     print(f"  Insurer    : {fields.get('insurer_name')}")
     print(f"  Procedure  : {fields.get('procedure')}")
     print(f"  ICD-10     : {fields.get('icd10_codes')}")
-    print(f"  Docs from Agent 1: {len(documents)}")
+    print(f"  Docs from Agent 1 (passed through): {len(documents)}")
 
-    print("[Agent 3] Calling Nova Lite — policy retrieval and requirement enumeration...")
-    prompt   = _build_policy_prompt(fields, documents)
+    print("[Agent 3] Calling Nova Lite — policy retrieval using Agent 2 fields...")
+    prompt   = _build_policy_prompt(fields)
     messages = [{"role": "user", "content": [{"text": prompt}]}]
 
     raw = invoke(
@@ -183,7 +175,7 @@ def run(agent2_output: dict) -> dict:
         messages=messages,
         system=SYSTEM_PROMPT,
         max_tokens=2000,
-        temperature=0.0,  # maximum determinism
+        temperature=0.0,
     )
 
     result = _safe_parse(raw)

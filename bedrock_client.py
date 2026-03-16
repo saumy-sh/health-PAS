@@ -13,28 +13,9 @@ import os
 import json
 import boto3
 from pathlib import Path
-from dotenv import load_dotenv   # pip install python-dotenv
 
-# ── Load .env from the same directory as this file ───────────────────────────
-_env_path = Path(__file__).parent / ".env"
-if _env_path.exists():
-    load_dotenv(dotenv_path=_env_path)
-    print(f"[bedrock_client] Loaded credentials from {_env_path}")
-else:
-    load_dotenv()   # fallback: OS environment variables
-    print("[bedrock_client] .env not found — falling back to OS environment")
 
-# ── Validate required vars are present ───────────────────────────────────────
-_missing = [v for v in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
-            if not os.getenv(v)]
-if _missing:
-    raise EnvironmentError(
-        f"\n❌  Missing AWS credentials: {_missing}\n"
-        "    Steps to fix:\n"
-        "      1. Copy .env.template  →  .env\n"
-        "      2. Fill in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY\n"
-        "      3. Re-run your script\n"
-    )
+
 
 # ── Config ────────────────────────────────────────────────────────────────────
 AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
@@ -58,13 +39,7 @@ def get_client():
     if _client is None:
         _client = boto3.client(
             service_name="bedrock-runtime",
-            region_name=AWS_REGION,
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            # Permanent IAM user keys (from .env) never expire.
-            # If your sandbox only gives you temporary keys, also add:
-            aws_session_token=os.getenv("AWS_SESSION_TOKEN"),
-            # and refresh them in your .env when they expire.
+            region_name=AWS_REGION
         )
     return _client
 

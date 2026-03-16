@@ -84,7 +84,9 @@ Extract and return ONLY this JSON:
   "physician_specialty": "physician specialty",
   "hospital":        "hospital or facility name",
   "date_of_service": "date of service or proposed treatment in YYYY-MM-DD"
-}}"""
+}}
+If any info not present in the documents, return the missing document with 
+"""
 
 
 def _extract_fields(documents: list) -> dict:
@@ -126,31 +128,51 @@ def _extract_fields(documents: list) -> dict:
         return {}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Readiness check
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _check_readiness(fields: dict) -> tuple:
     """
     Minimum requirements to search for a policy:
-      - at least an insurer name OR a policy_number
-      - at least a patient name OR member_id
+      - Insurance Provider (insurer_name)
+      - Policy Number
+      - Patient Name
+      - Member ID or Patient DOB (as additional identification)
 
-    Returns (ready: bool, missing_critical: list)
+    For now, enforcing exactly Insurance Provider and Policy Number as requested.
+    Returns (ready: bool, missing_info: list)
     """
     missing = []
 
-    insurer_ok = bool(
-        fields.get("insurer_name") or fields.get("policy_number")
-    )
-    if not insurer_ok:
-        missing.append("insurer_name / policy_number")
+    if not fields.get("insurer_name"):
+        missing.append({
+            "document_type": "Insurance Card / Member ID Information",
+            "info_needed": "Insurance Provider (Insurer Name)",
+            "reason": "The carrier name is required to determine which policy database to search.",
+            "priority": "HIGH"
+        })
 
-    patient_ok = bool(
-        fields.get("patient_name") or fields.get("member_id")
-    )
-    if not patient_ok:
-        missing.append("patient_name / member_id")
+    if not fields.get("policy_number"):
+        missing.append({
+            "document_type": "Insurance Card / Member ID Information",
+            "info_needed": "Policy Number",
+            "reason": "The policy number is required to uniquely identify the patient's coverage plan.",
+            "priority": "HIGH"
+        })
+
+    if not fields.get("member_id"):
+        missing.append({
+            "document_type": "Insurance Card / Member ID Information",
+            "info_needed": "Member ID",
+            "reason": "The member ID is required for verification of unique coverage within the insurer's records.",
+            "priority": "HIGH"
+        })
+
+    # Adding Patient Name as it is usually required for any search
+    if not fields.get("patient_name"):
+        missing.append({
+            "document_type": "Patient Identification / Clinical Notes",
+            "info_needed": "Patient Name",
+            "reason": "The patient's name is required to verify the policy holder.",
+            "priority": "HIGH"
+        })
 
     ready = len(missing) == 0
     return ready, missing

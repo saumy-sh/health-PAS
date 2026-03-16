@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from mangum import Mangum
 
 from routes.analyse import router as analyse_router
 
@@ -26,6 +27,9 @@ app = FastAPI(
     description="Pre-authorization pipeline backend (Granular Testing)",
     version="1.0.0",
 )
+
+# Lambda Handler
+handler = Mangum(app)
 
 # ── CORS — allow the frontend (any origin during dev) ─────────────────────────
 app.add_middleware(

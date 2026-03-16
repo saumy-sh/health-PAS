@@ -1,0 +1,21 @@
+# Use the AWS Lambda Python 3.11 base image
+FROM public.ecr.aws/lambda/python:3.11
+
+# Copy requirements.txt
+COPY requirements.txt ${LAMBDA_TASK_ROOT}
+
+# Install dependencies
+# Note: we don't need libgl1-mesa-glx because it's only for GUI/OpenCV usually, 
+# but let's see if pymupdf/Pillow need any shared libs.
+# On Lambda base (Amazon Linux 2), we might need some devel tools if wheels aren't available.
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy all files
+COPY . ${LAMBDA_TASK_ROOT}
+
+# Set the PYTHONPATH to includes the root
+ENV PYTHONPATH=${LAMBDA_TASK_ROOT}
+
+# Set the CMD to your handler
+# Format: filename.handlername
+CMD [ "backend.main.handler" ]
