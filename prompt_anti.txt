@@ -1,0 +1,12 @@
+things left to do:
+ - instead of searching from net give a fixed database of policy to search from [done]
+ - improve the main page to include why it is used,etc.[done]
+ - check the pipeline strategy and try to find sample where it actually rejects based on less weeks of treatment grounds[done]
+ - check whether it asks for documents again and again or not[done]
+ - improve the pdf filling one[removed]
+ - make video
+ - make readme
+ - fill the form
+
+
+uvicorn main:app --reload --port 8001

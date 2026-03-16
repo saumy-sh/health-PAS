@@ -12,32 +12,21 @@
                 "requires_auth": true,
                 "document_requirements": [
                     {
-                        "document_type": "Doctor's Clinical Notes",
+                        "document_type": "Doctor Clinical Notes",
                         "purpose": "Establish medical necessity",
-                        "info_needed": "Diagnosis ICD-10 code, symptom duration, neurological findings"
+                        "info_needed": "Diagnosis ICD10, symptom duration, neurological exam"
                     },
                     {
                         "document_type": "Previous Treatment Records",
-                        "purpose": "Show conservative therapy attempt",
-                        "info_needed": "NSAIDs, physical therapy or other conservative treatments attempted"
-                    },
-                    {
-                        "document_type": "Insurance Card",
-                        "purpose": "Verify patient eligibility",
-                        "info_needed": "Policy number, member ID, group number"
+                        "purpose": "Show conservative treatment attempt",
+                        "info_needed": "NSAIDs, PT, steroid injections"
                     }
                 ],
                 "medical_requirements": [
                     {
                         "requirement": "Symptom duration",
-                        "description": "Patient must have lower back pain lasting at least 6 weeks",
+                        "description": "Lower back pain duration",
                         "threshold": "6 weeks",
-                        "importance": "required"
-                    },
-                    {
-                        "requirement": "Conservative therapy",
-                        "description": "Must have attempted NSAIDs or physical therapy",
-                        "threshold": "4 weeks",
                         "importance": "required"
                     }
                 ]
@@ -50,20 +39,76 @@
                 "document_requirements": [
                     {
                         "document_type": "Physician Referral",
-                        "purpose": "Confirm imaging order",
-                        "info_needed": "Referring physician name and reason for scan"
-                    },
-                    {
-                        "document_type": "Clinical Notes",
-                        "purpose": "Establish medical necessity",
-                        "info_needed": "Abdominal symptoms, suspected diagnosis"
+                        "purpose": "Confirm scan order",
+                        "info_needed": "Referring physician and reason"
                     }
                 ],
                 "medical_requirements": [
                     {
-                        "requirement": "Clinical indication",
-                        "description": "Patient must show symptoms such as severe abdominal pain or suspected internal pathology",
+                        "requirement": "Severe abdominal symptoms",
+                        "description": "Persistent abdominal pain or suspected pathology",
                         "threshold": "documented",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "Lumbar Spine X-Ray": {
+                "cpt_codes": [
+                    "72100"
+                ],
+                "requires_auth": false,
+                "document_requirements": [
+                    {
+                        "document_type": "Physician Order",
+                        "purpose": "Confirm imaging request",
+                        "info_needed": "Ordering physician"
+                    }
+                ],
+                "medical_requirements": []
+            },
+            "Brain MRI": {
+                "cpt_codes": [
+                    "70551"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Neurology Notes",
+                        "purpose": "Confirm neurological symptoms",
+                        "info_needed": "Headaches, seizures, deficits"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Neurological symptoms",
+                        "description": "Persistent neurological complaints",
+                        "threshold": "documented",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "Spinal Fusion Surgery": {
+                "cpt_codes": [
+                    "22612"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Orthopedic Surgical Evaluation",
+                        "purpose": "Confirm surgical necessity",
+                        "info_needed": "Spinal instability evidence"
+                    },
+                    {
+                        "document_type": "MRI Report",
+                        "purpose": "Confirm pathology",
+                        "info_needed": "Disc degeneration or instability"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Failed conservative therapy",
+                        "description": "Physical therapy or medications ineffective",
+                        "threshold": "3 months",
                         "importance": "required"
                     }
                 ]
@@ -84,31 +129,20 @@
                 "document_requirements": [
                     {
                         "document_type": "Orthopedic Evaluation",
-                        "purpose": "Confirm structural knee injury",
-                        "info_needed": "Physical exam findings, suspected meniscal tear"
+                        "purpose": "Confirm knee injury",
+                        "info_needed": "Meniscal tear suspected"
                     },
                     {
                         "document_type": "MRI Knee Report",
-                        "purpose": "Confirm internal knee damage",
-                        "info_needed": "MRI evidence of tear or cartilage damage"
-                    },
-                    {
-                        "document_type": "Insurance Card",
-                        "purpose": "Verify coverage",
-                        "info_needed": "Policy number, member ID"
+                        "purpose": "Confirm internal damage",
+                        "info_needed": "Meniscus or cartilage tear"
                     }
                 ],
                 "medical_requirements": [
                     {
-                        "requirement": "Conservative treatment",
-                        "description": "Physical therapy attempted prior to surgery",
+                        "requirement": "Physical therapy trial",
+                        "description": "Conservative therapy attempted",
                         "threshold": "6 weeks",
-                        "importance": "required"
-                    },
-                    {
-                        "requirement": "Mechanical symptoms",
-                        "description": "Locking, catching or instability of knee joint",
-                        "threshold": "documented",
                         "importance": "required"
                     }
                 ]
@@ -121,15 +155,71 @@
                 "document_requirements": [
                     {
                         "document_type": "Physician Notes",
-                        "purpose": "Establish reason for MRI",
-                        "info_needed": "Shoulder pain duration and exam findings"
+                        "purpose": "Confirm shoulder pain",
+                        "info_needed": "Pain severity and duration"
                     }
                 ],
                 "medical_requirements": [
                     {
-                        "requirement": "Symptom duration",
-                        "description": "Shoulder pain must persist despite treatment",
+                        "requirement": "Pain duration",
+                        "description": "Persistent shoulder pain",
                         "threshold": "4 weeks",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "Rotator Cuff Surgery": {
+                "cpt_codes": [
+                    "23412"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "MRI Shoulder Report",
+                        "purpose": "Confirm tear",
+                        "info_needed": "Rotator cuff tear evidence"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Failed PT",
+                        "description": "Physical therapy unsuccessful",
+                        "threshold": "8 weeks",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "Hip MRI": {
+                "cpt_codes": [
+                    "73721"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Orthopedic Notes",
+                        "purpose": "Confirm hip pain",
+                        "info_needed": "Pain location and exam findings"
+                    }
+                ],
+                "medical_requirements": []
+            },
+            "Elbow Arthroscopy": {
+                "cpt_codes": [
+                    "29830"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Orthopedic Referral",
+                        "purpose": "Confirm joint problem",
+                        "info_needed": "Joint instability"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Persistent elbow pain",
+                        "description": "Pain not responding to treatment",
+                        "threshold": "6 weeks",
                         "importance": "required"
                     }
                 ]
@@ -142,27 +232,6 @@
             "HMO"
         ],
         "procedures": {
-            "Lumbar Spine X-Ray": {
-                "cpt_codes": [
-                    "72100"
-                ],
-                "requires_auth": false,
-                "document_requirements": [
-                    {
-                        "document_type": "Physician Order",
-                        "purpose": "Confirm imaging request",
-                        "info_needed": "Ordering physician and indication"
-                    }
-                ],
-                "medical_requirements": [
-                    {
-                        "requirement": "Clinical symptoms",
-                        "description": "Patient reports lower back pain or trauma",
-                        "threshold": "documented",
-                        "importance": "recommended"
-                    }
-                ]
-            },
             "Hip Replacement Surgery": {
                 "cpt_codes": [
                     "27130"
@@ -170,21 +239,91 @@
                 "requires_auth": true,
                 "document_requirements": [
                     {
-                        "document_type": "Orthopedic Surgical Evaluation",
-                        "purpose": "Confirm need for joint replacement",
-                        "info_needed": "Severity of arthritis and functional limitation"
+                        "document_type": "Orthopedic Evaluation",
+                        "purpose": "Confirm joint degeneration",
+                        "info_needed": "Functional limitation"
                     },
                     {
-                        "document_type": "Imaging Report",
-                        "purpose": "Confirm structural joint damage",
-                        "info_needed": "X-ray or MRI findings"
+                        "document_type": "X-Ray Report",
+                        "purpose": "Confirm arthritis",
+                        "info_needed": "Joint space narrowing"
                     }
                 ],
                 "medical_requirements": [
                     {
                         "requirement": "Failed conservative treatment",
-                        "description": "Pain persists despite medication or therapy",
+                        "description": "Medication or therapy ineffective",
                         "threshold": "3 months",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "Total Knee Replacement": {
+                "cpt_codes": [
+                    "27447"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Orthopedic Surgeon Evaluation",
+                        "purpose": "Confirm severe arthritis",
+                        "info_needed": "Mobility limitation"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Severe osteoarthritis",
+                        "description": "Advanced degenerative joint disease",
+                        "threshold": "documented",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "CT Chest": {
+                "cpt_codes": [
+                    "71260"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Pulmonologist Referral",
+                        "purpose": "Confirm chest pathology suspicion",
+                        "info_needed": "Symptoms or abnormal xray"
+                    }
+                ],
+                "medical_requirements": []
+            },
+            "Echocardiogram": {
+                "cpt_codes": [
+                    "93306"
+                ],
+                "requires_auth": false,
+                "document_requirements": [
+                    {
+                        "document_type": "Cardiology Order",
+                        "purpose": "Confirm test order",
+                        "info_needed": "Cardiac symptoms"
+                    }
+                ],
+                "medical_requirements": []
+            },
+            "Cardiac Catheterization": {
+                "cpt_codes": [
+                    "93458"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Cardiology Evaluation",
+                        "purpose": "Confirm coronary disease suspicion",
+                        "info_needed": "Stress test abnormality"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Abnormal stress test",
+                        "description": "Evidence of ischemia",
+                        "threshold": "documented",
                         "importance": "required"
                     }
                 ]
@@ -205,19 +344,14 @@
                 "document_requirements": [
                     {
                         "document_type": "Cardiologist Referral",
-                        "purpose": "Confirm cardiology evaluation",
-                        "info_needed": "Reason for stress test"
-                    },
-                    {
-                        "document_type": "Clinical Notes",
-                        "purpose": "Document symptoms",
-                        "info_needed": "Chest pain, shortness of breath, risk factors"
+                        "purpose": "Confirm test indication",
+                        "info_needed": "Chest pain or CAD risk"
                     }
                 ],
                 "medical_requirements": [
                     {
                         "requirement": "Cardiac symptoms",
-                        "description": "Patient has chest pain or suspected coronary artery disease",
+                        "description": "Chest pain or shortness of breath",
                         "threshold": "documented",
                         "importance": "required"
                     }
@@ -231,14 +365,56 @@
                 "document_requirements": [
                     {
                         "document_type": "Sleep Specialist Referral",
-                        "purpose": "Confirm sleep evaluation",
-                        "info_needed": "Suspected sleep apnea"
+                        "purpose": "Confirm sleep apnea suspicion",
+                        "info_needed": "Snoring or daytime fatigue"
+                    }
+                ],
+                "medical_requirements": []
+            },
+            "Colonoscopy": {
+                "cpt_codes": [
+                    "45378"
+                ],
+                "requires_auth": false,
+                "document_requirements": [
+                    {
+                        "document_type": "Gastroenterologist Order",
+                        "purpose": "Confirm procedure request",
+                        "info_needed": "Screening or symptoms"
+                    }
+                ],
+                "medical_requirements": []
+            },
+            "Upper Endoscopy": {
+                "cpt_codes": [
+                    "43235"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "GI Specialist Referral",
+                        "purpose": "Confirm GI symptoms",
+                        "info_needed": "GERD, bleeding, or ulcers"
+                    }
+                ],
+                "medical_requirements": []
+            },
+            "Gallbladder Removal Surgery": {
+                "cpt_codes": [
+                    "47562"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Ultrasound Report",
+                        "purpose": "Confirm gallstones",
+                        "info_needed": "Stone evidence"
                     }
                 ],
                 "medical_requirements": [
                     {
-                        "requirement": "Sleep apnea symptoms",
-                        "description": "Snoring, daytime fatigue, witnessed apnea",
+                        "requirement": "Symptomatic gallstones",
+                        "description": "Pain or infection",
                         "threshold": "documented",
                         "importance": "required"
                     }
