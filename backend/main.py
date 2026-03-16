@@ -12,7 +12,8 @@ from backend.routes.analyse import router as analyse_router
 
 app = FastAPI(title="InsuranceHelper API", version="1.0.0")
 
-handler = Mangum(app, lifespan="off")
+# Fix: strip /prod prefix added by API Gateway
+handler = Mangum(app, lifespan="off", api_gateway_base_path="/prod")
 
 app.add_middleware(
     CORSMiddleware,
