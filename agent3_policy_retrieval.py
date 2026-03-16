@@ -9,23 +9,12 @@ Role:
     • documents             — prose summaries from Agent 1
 
   This agent:
-    1. Identifies the specific treatment / procedure / medication for which
-       pre-authorization is required.
-    2. Retrieves the general pre-authorization policy criteria for that procedure.
+    1. First looks up the requirements from a local knowledge base (policy_requirements.json).
+    2. If not found in the KB, falls back to the LLM to identify the specific treatment/procedure
+       and retrieve pre-authorization policy criteria.
     3. Outputs TWO separate requirement lists:
-
-       document_requirements  — documents (or document content) that must be
-                                submitted. Each entry describes what document
-                                is needed and what information it must contain.
-
-       medical_requirements   — clinical / medical conditions that must be met
-                                (e.g. minimum symptom duration, step therapy
-                                trials, lab result thresholds). These do NOT
-                                refer to documents — they are facts about the
-                                patient's medical situation.
-
-  This agent does NOT check whether those requirements are fulfilled.
-  That is the job of Agent 4 (documents) and Agent 5 (medical).
+       document_requirements  — documents (or document content) that must be submitted.
+       medical_requirements   — clinical / medical conditions that must be met.
 
 Input  : dict from Agent 2
 Output : {
@@ -34,15 +23,33 @@ Output : {
     "document_requirements":  [{document_type, purpose, info_needed}],
     "medical_requirements":   [{requirement, description, threshold, importance}],
     "policy_notes":           str,
-    "data":                   agent2 output (passed through)
+    "policy_search_fields":   dict (passed through),
+    "documents":              list (passed through)
   }
 """
 
 import json
 import re
-
+import os
 from bedrock_client import invoke, LITE_MODEL_ID
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Knowledge Base Initialization
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Load knowledge base (from a local file or potentially S3)
+KB_FILE = "policy_requirements.json"
+POLICY_KB = {}
+
+try:
+    if os.path.exists(KB_FILE):
+        with open(KB_FILE, "r") as f:
+            POLICY_KB = json.load(f)
+        print(f"[Agent 3] Loaded knowledge base from {KB_FILE} ({len(POLICY_KB)} insurers)")
+    else:
+        print(f"[Agent 3] ⚠  {KB_FILE} not found. Knowledge base lookup will be skipped.")
+except Exception as e:
+    print(f"[Agent 3] ❌ Error loading knowledge base: {e}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Prompts
@@ -61,7 +68,6 @@ SYSTEM_PROMPT = [
         )
     }
 ]
-
 
 def _build_policy_prompt(fields: dict) -> str:
     return f"""A patient is requesting prior authorization for a medical procedure/treatment/medication.
@@ -117,14 +123,12 @@ Return JSON:
   "policy_notes": "any general notes about this insurer's pre-auth policy for this procedure"
 }}"""
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# JSON parser
+# Helper Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _safe_parse(raw: str) -> dict:
     text = raw.strip()
-
     try:
         return json.loads(text)
     except json.JSONDecodeError:
@@ -147,9 +151,42 @@ def _safe_parse(raw: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    print(f"  [Agent3] ❌ JSON parse failed. Raw: {raw[:300]}")
+    print(f"  [Agent 3] ❌ JSON parse failed. Raw: {raw[:300]}")
     return {}
 
+def llm_fallback(fields: dict) -> dict:
+    """Fallback logic to retrieve policy requirements using LLM."""
+    print("[Agent 3] Calling Nova Lite — policy retrieval using Agent 2 fields...")
+    prompt = _build_policy_prompt(fields)
+    messages = [{"role": "user", "content": [{"text": prompt}]}]
+
+    try:
+        raw = invoke(
+            model_id=LITE_MODEL_ID,
+            messages=messages,
+            system=SYSTEM_PROMPT,
+            max_tokens=2000,
+            temperature=0.0,
+        )
+        result = _safe_parse(raw)
+    except Exception as e:
+        print(f"  [Agent 3] ❌ Bedrock invocation failed: {e}")
+        result = {}
+
+    if not result:
+        print("[Agent 3] ⚠  Parse failed — using minimal fallback")
+        result = {
+            "authorization_required": True,
+            "procedure_identified": fields.get("procedure", "Unknown procedure"),
+            "document_requirements": [],
+            "medical_requirements": [],
+            "policy_notes": "Policy retrieval failed — manual review required.",
+        }
+    else:
+        if "policy_notes" not in result:
+             result["policy_notes"] = "Retrieved via LLM analysis of known policy trends."
+
+    return result
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Public entry point
@@ -158,65 +195,59 @@ def _safe_parse(raw: str) -> dict:
 def run(agent2_output: dict) -> dict:
     print("\n[Agent 3] Policy Retrieval + Requirement Generator — START")
 
-    fields    = agent2_output.get("policy_search_fields", {})
-    documents = agent2_output.get("documents", [])
+    fields = agent2_output.get("policy_search_fields", {})
+    insurer = fields.get("insurer_name")
+    procedure = fields.get("procedure")
+    cpt_codes = fields.get("cpt_codes", [])
 
-    print(f"  Insurer    : {fields.get('insurer_name')}")
-    print(f"  Procedure  : {fields.get('procedure')}")
-    print(f"  ICD-10     : {fields.get('icd10_codes')}")
-    print(f"  Docs from Agent 1 (passed through): {len(documents)}")
+    print(f"  Insurer    : {insurer}")
+    print(f"  Procedure  : {procedure}")
+    print(f"  CPT Codes  : {cpt_codes}")
 
-    print("[Agent 3] Calling Nova Lite — policy retrieval using Agent 2 fields...")
-    prompt   = _build_policy_prompt(fields)
-    messages = [{"role": "user", "content": [{"text": prompt}]}]
+    # 1. Try to match by insurer + procedure name
+    proc_data = None
+    if insurer in POLICY_KB:
+        proc_data = POLICY_KB[insurer]["procedures"].get(procedure)
+        
+        # 2. Optionally also match by CPT code if procedure name not found
+        if not proc_data and cpt_codes:
+            for proc_name, data in POLICY_KB[insurer]["procedures"].items():
+                kb_cpt_codes = data.get("cpt_codes", [])
+                if any(code in kb_cpt_codes for code in cpt_codes):
+                    proc_data = data
+                    procedure = proc_name
+                    print(f"  [Agent 3] Match found by CPT code in KB: {procedure}")
+                    break
 
-    raw = invoke(
-        model_id=LITE_MODEL_ID,
-        messages=messages,
-        system=SYSTEM_PROMPT,
-        max_tokens=2000,
-        temperature=0.0,
-    )
-
-    result = _safe_parse(raw)
-
-    if not result:
-        print("[Agent 3] ⚠  Parse failed — using minimal fallback")
+    if proc_data:
+        print(f"  [Agent 3] ✅ Policy found in knowledge base for insurer '{insurer}'")
         result = {
-            "authorization_required": True,
-            "procedure_identified":   fields.get("procedure", "Unknown procedure"),
-            "document_requirements":  [],
-            "medical_requirements":   [],
-            "policy_notes":           "Policy retrieval failed — manual review required.",
+            "authorization_required": proc_data.get("requires_auth", True),
+            "procedure_identified": procedure,
+            "document_requirements": proc_data.get("document_requirements", []),
+            "medical_requirements": proc_data.get("medical_requirements", []),
+            "policy_notes": f"Retrieved from {insurer} knowledge base"
         }
+    else:
+        # 3. Fallback to LLM
+        print(f"  [Agent 3] ℹ  No exact match in KB for {insurer}/{procedure}. Falling back to LLM...")
+        result = llm_fallback(fields)
 
-    doc_reqs     = result.get("document_requirements", [])
-    med_reqs     = result.get("medical_requirements", [])
-    auth_required = result.get("authorization_required", True)
+    # Add pass-through data and final logging
+    result.update({
+        "policy_search_fields": fields,
+        "documents": agent2_output.get("documents", [])
+    })
 
-    print(f"  Auth required        : {auth_required}")
+    doc_reqs = result.get("document_requirements", [])
+    med_reqs = result.get("medical_requirements", [])
+    print(f"  Auth required        : {result.get('authorization_required')}")
     print(f"  Procedure identified : {result.get('procedure_identified')}")
     print(f"  Document requirements: {len(doc_reqs)}")
-    for r in doc_reqs:
-        print(f"    📄 [{r.get('document_type')}] — {r.get('purpose', '')[:60]}")
     print(f"  Medical requirements : {len(med_reqs)}")
-    for r in med_reqs:
-        print(f"    🏥 [{r.get('importance', 'required')}] {r.get('requirement')} — {str(r.get('description', ''))[:60]}")
-
-    output = {
-        "authorization_required": auth_required,
-        "procedure_identified":   result.get("procedure_identified"),
-        "document_requirements":  doc_reqs,
-        "medical_requirements":   med_reqs,
-        "policy_notes":           result.get("policy_notes", ""),
-        # Pass everything through for downstream agents
-        "policy_search_fields":   fields,
-        "documents":              documents,  # agent1 docs
-    }
-
     print("[Agent 3] Policy Retrieval + Requirement Generator — DONE\n")
-    return output
-
+    
+    return result
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Standalone test
@@ -228,42 +259,19 @@ if __name__ == "__main__":
         "policy_search_fields": {
             "patient_name":      "John R. Doe",
             "patient_dob":       "1985-05-12",
-            "patient_mrn":       "PT-88293",
             "insurer_name":      "BlueCross BlueShield",
-            "plan_type":         "PPO",
-            "policy_number":     "BCBS-99001122",
-            "member_id":         "BCBS-9900122",
-            "group_number":      "8800221",
-            "diagnosis":         "Lumbar Radiculopathy",
             "procedure":         "MRI Lumbar Spine Without Contrast",
-            "icd10_codes":       ["M54.16"],
             "cpt_codes":         ["72148"],
-            "ordering_physician": "Dr. Sarah Jenkins",
-            "physician_specialty": "Orthopedic Surgery",
         },
         "documents": [
-            {
-                "document_type": "Doctor's Clinical Notes",
-                "content": (
-                    "Clinical notes from Dr. Sarah Jenkins at Metropolitan General Hospital. "
-                    "Patient John R. Doe has been experiencing lower back pain radiating down "
-                    "the right leg for 7 weeks. Diagnosis: Lumbar Radiculopathy (M54.16). "
-                    "Positive SLR at 30 degrees. Prior treatments: NSAIDs for 4 weeks with "
-                    "minimal relief, physical therapy for 3 weeks. Requesting MRI Lumbar "
-                    "Spine Without Contrast (CPT 72148)."
-                ),
-            },
-            {
-                "document_type": "Insurance Card",
-                "content": (
-                    "BlueCross BlueShield PPO insurance card. Member: John R. Doe. "
-                    "Member ID: BCBS-9900122. Policy: BCBS-99001122. Group: 8800221."
-                ),
-            },
+            {"document_type": "Test Doc", "content": "Test content"}
         ],
     }
-    result = run(mock_input)
-    print(json.dumps(
-        {k: v for k, v in result.items() if k not in ("documents", "policy_search_fields")},
-        indent=2
-    ))
+    # Test KB match
+    print("--- Testing KB Match ---")
+    res1 = run(mock_input)
+    
+    # Test Fallback
+    print("\n--- Testing Fallback (Unknown Insurer) ---")
+    mock_input["policy_search_fields"]["insurer_name"] = "UnknownHealth"
+    res2 = run(mock_input)

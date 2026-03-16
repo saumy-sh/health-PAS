@@ -1,0 +1,249 @@
+{
+    "BlueCross BlueShield": {
+        "plan_types": [
+            "PPO",
+            "HMO"
+        ],
+        "procedures": {
+            "MRI Lumbar Spine Without Contrast": {
+                "cpt_codes": [
+                    "72148"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Doctor's Clinical Notes",
+                        "purpose": "Establish medical necessity",
+                        "info_needed": "Diagnosis ICD-10 code, symptom duration, neurological findings"
+                    },
+                    {
+                        "document_type": "Previous Treatment Records",
+                        "purpose": "Show conservative therapy attempt",
+                        "info_needed": "NSAIDs, physical therapy or other conservative treatments attempted"
+                    },
+                    {
+                        "document_type": "Insurance Card",
+                        "purpose": "Verify patient eligibility",
+                        "info_needed": "Policy number, member ID, group number"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Symptom duration",
+                        "description": "Patient must have lower back pain lasting at least 6 weeks",
+                        "threshold": "6 weeks",
+                        "importance": "required"
+                    },
+                    {
+                        "requirement": "Conservative therapy",
+                        "description": "Must have attempted NSAIDs or physical therapy",
+                        "threshold": "4 weeks",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "CT Abdomen With Contrast": {
+                "cpt_codes": [
+                    "74160"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Physician Referral",
+                        "purpose": "Confirm imaging order",
+                        "info_needed": "Referring physician name and reason for scan"
+                    },
+                    {
+                        "document_type": "Clinical Notes",
+                        "purpose": "Establish medical necessity",
+                        "info_needed": "Abdominal symptoms, suspected diagnosis"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Clinical indication",
+                        "description": "Patient must show symptoms such as severe abdominal pain or suspected internal pathology",
+                        "threshold": "documented",
+                        "importance": "required"
+                    }
+                ]
+            }
+        }
+    },
+    "Cigna": {
+        "plan_types": [
+            "PPO",
+            "EPO"
+        ],
+        "procedures": {
+            "Knee Arthroscopy": {
+                "cpt_codes": [
+                    "29881"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Orthopedic Evaluation",
+                        "purpose": "Confirm structural knee injury",
+                        "info_needed": "Physical exam findings, suspected meniscal tear"
+                    },
+                    {
+                        "document_type": "MRI Knee Report",
+                        "purpose": "Confirm internal knee damage",
+                        "info_needed": "MRI evidence of tear or cartilage damage"
+                    },
+                    {
+                        "document_type": "Insurance Card",
+                        "purpose": "Verify coverage",
+                        "info_needed": "Policy number, member ID"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Conservative treatment",
+                        "description": "Physical therapy attempted prior to surgery",
+                        "threshold": "6 weeks",
+                        "importance": "required"
+                    },
+                    {
+                        "requirement": "Mechanical symptoms",
+                        "description": "Locking, catching or instability of knee joint",
+                        "threshold": "documented",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "Shoulder MRI": {
+                "cpt_codes": [
+                    "73221"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Physician Notes",
+                        "purpose": "Establish reason for MRI",
+                        "info_needed": "Shoulder pain duration and exam findings"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Symptom duration",
+                        "description": "Shoulder pain must persist despite treatment",
+                        "threshold": "4 weeks",
+                        "importance": "required"
+                    }
+                ]
+            }
+        }
+    },
+    "UnitedHealthcare": {
+        "plan_types": [
+            "PPO",
+            "HMO"
+        ],
+        "procedures": {
+            "Lumbar Spine X-Ray": {
+                "cpt_codes": [
+                    "72100"
+                ],
+                "requires_auth": false,
+                "document_requirements": [
+                    {
+                        "document_type": "Physician Order",
+                        "purpose": "Confirm imaging request",
+                        "info_needed": "Ordering physician and indication"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Clinical symptoms",
+                        "description": "Patient reports lower back pain or trauma",
+                        "threshold": "documented",
+                        "importance": "recommended"
+                    }
+                ]
+            },
+            "Hip Replacement Surgery": {
+                "cpt_codes": [
+                    "27130"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Orthopedic Surgical Evaluation",
+                        "purpose": "Confirm need for joint replacement",
+                        "info_needed": "Severity of arthritis and functional limitation"
+                    },
+                    {
+                        "document_type": "Imaging Report",
+                        "purpose": "Confirm structural joint damage",
+                        "info_needed": "X-ray or MRI findings"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Failed conservative treatment",
+                        "description": "Pain persists despite medication or therapy",
+                        "threshold": "3 months",
+                        "importance": "required"
+                    }
+                ]
+            }
+        }
+    },
+    "Aetna": {
+        "plan_types": [
+            "PPO",
+            "POS"
+        ],
+        "procedures": {
+            "Cardiac Stress Test": {
+                "cpt_codes": [
+                    "93015"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Cardiologist Referral",
+                        "purpose": "Confirm cardiology evaluation",
+                        "info_needed": "Reason for stress test"
+                    },
+                    {
+                        "document_type": "Clinical Notes",
+                        "purpose": "Document symptoms",
+                        "info_needed": "Chest pain, shortness of breath, risk factors"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Cardiac symptoms",
+                        "description": "Patient has chest pain or suspected coronary artery disease",
+                        "threshold": "documented",
+                        "importance": "required"
+                    }
+                ]
+            },
+            "Sleep Study": {
+                "cpt_codes": [
+                    "95810"
+                ],
+                "requires_auth": true,
+                "document_requirements": [
+                    {
+                        "document_type": "Sleep Specialist Referral",
+                        "purpose": "Confirm sleep evaluation",
+                        "info_needed": "Suspected sleep apnea"
+                    }
+                ],
+                "medical_requirements": [
+                    {
+                        "requirement": "Sleep apnea symptoms",
+                        "description": "Snoring, daytime fatigue, witnessed apnea",
+                        "threshold": "documented",
+                        "importance": "required"
+                    }
+                ]
+            }
+        }
+    }
+}

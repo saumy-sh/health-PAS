@@ -167,42 +167,38 @@ def _safe_parse_json(raw: str, context: str = "") -> dict:
 SYSTEM_PROMPT = [
     {
         "text": (
-            "You are a medical document intelligence agent. "
-            "Your job is to examine each submitted document image and produce a "
-            "clear, complete natural-language description of its contents. "
-            "You do NOT extract named fields or fill a schema — you write a "
-            "prose paragraph per document that captures everything important. "
-            "For imaging (X-rays, MRI, CT scans), describe what the image shows "
-            "clinically. "
+            "You are an expert clinical document processing and transcription assistant. "
+            "Your role is to perform high-fidelity OCR and exhaustive data extraction from images. "
+            "For each document, you MUST extract absolutely ALL information present, leaving nothing out. "
+            "Transcribe all key-value pairs, dates, names, provider information, policy details, lab results, "
+            "measurements, clinical notes, subjective/objective findings, observations, impressions, and treatment plans. "
+            "Include all administrative details such as addresses, phone numbers, and IDs. "
+            "Do not summarize or omit information; provide a highly detailed, comprehensive textual representation "
+            "of everything found in the document. "
             "Return ONLY valid JSON — no markdown, no preamble."
         )
     }
 ]
 
-EXTRACTION_PROMPT = """Examine every document image provided. For each distinct document you see,
-identify what type of document it is and write a detailed paragraph describing ALL of its content.
+EXTRACTION_PROMPT = """Analyze the provided healthcare document images. For each distinct document detected,
+provide its classification and an exhaustive compilation of all data found within it.
 
-RULES:
-1. Each image or group of pages that belongs together counts as ONE document entry.
-2. document_type: give a clear human-readable name, e.g.:
-   "Doctor's Clinical Notes", "Insurance Card", "Lab Report", "X-Ray Image",
-   "Medical Pretreatment Cost Estimate", "Patient Information Sheet",
-   "Physician Referral Letter", "Prescription", "Prior Treatment Record", etc.
-3. content: write a DETAILED prose paragraph covering everything visible:
-   - All names (patient, physician, insurer)
-   - All dates, codes (ICD-10, CPT), medications, diagnoses
-   - Clinical findings, test results, measurements
-   - For X-rays / imaging: describe what the image shows anatomically and clinically
-   - Cost amounts, policy numbers, member IDs — include actual values
-   - Do NOT leave out information; be thorough
-4. If multiple documents appear in the same image, create separate entries for each.
+GUIDELINES:
+1. document_type: Standardized classification (e.g., 'Clinical Note', 'Insurance ID', 'Laboratory Report', 'Imaging Report', 'Physician Referral', 'Pre-treatment Estimate').
+2. content: A highly exhaustive and comprehensive textual representation of absolutely EVERYTHING in the document:
+   - Administrative details: Hospital/Clinic names, provider names, addresses, contact info, dates of service, Patient name, DOB, Insurance provider, Member/Policy/Group IDs.
+   - Clinical context: Diagnoses, ICD-10/CPT/ADA codes, medications, full clinical findings, subjective/objective notes, assessments, and treatment plans.
+   - Lab/Imaging results: All test names, values, units, reference ranges, anatomical sites, and clinical observations.
+   - Financial/Estimate details: All procedures, quantities, costs, insurance coverage amounts, and patient responsibilities.
+   - Ensure EVERY SINGLE PIECE of text, number, and data point on the document is captured in this field. Do not drop any detail, no matter how small.
+3. If an image contains multiple separate documents, provide a separate entry for each.
 
-Return ONLY this JSON:
+Return ONLY this JSON structure exactly:
 {
   "documents": [
     {
       "document_type": "string",
-      "content": "full prose paragraph describing everything in this document"
+      "content": "exhaustive extraction of all text and data"
     }
   ]
 }"""
@@ -249,6 +245,21 @@ def run(documents: Union[str, list, dict]) -> dict:
         temperature=0.1,
     )
 
+    if raw.startswith("ERROR:"):
+        print(f"  [Agent 1] ⚠ Nova Pro error: {raw}")
+        print("  [Agent 1] Retrying with Nova Lite (Agent 1 Fallback)...")
+        from bedrock_client import LITE_MODEL_ID
+        raw = invoke(
+            model_id=LITE_MODEL_ID,
+            messages=messages,
+            system=SYSTEM_PROMPT,
+            max_tokens=4096,
+            temperature=0.1,
+        )
+
+    if raw.startswith("ERROR:"):
+        raise RuntimeError(f"[Agent 1] ❌ Pipeline Halted: Both models refused or failed to process images. {raw}")
+
     parsed = _safe_parse_json(raw, context="document description")
     if not parsed or not parsed.get("documents"):
         raise RuntimeError(
@@ -275,6 +286,14 @@ def run(documents: Union[str, list, dict]) -> dict:
     for doc in clean_docs:
         preview = doc["content"][:80].replace("\n", " ")
         print(f"    [{doc['document_type']}]  {preview}...")
+
+    # Save Agent 1 output to JSON
+    out_dir = Path("output")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_file = out_dir / "agent1_output.json"
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+    print(f"  [Agent 1] Output saved to: {out_file}")
 
     print("[Agent 1] Document Intelligence — DONE\n")
     return output

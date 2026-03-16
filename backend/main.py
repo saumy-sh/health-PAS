@@ -6,14 +6,12 @@ sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from backend.routes.analyse import router as analyse_router
 
 app = FastAPI(title="InsuranceHelper API", version="1.0.0")
-
-# Fix: strip /prod prefix added by API Gateway
-handler = Mangum(app, lifespan="off", api_gateway_base_path="/prod")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,9 +23,14 @@ app.add_middleware(
 
 app.include_router(analyse_router)
 
-@app.get("/")
-async def root():
-    return {"status": "ok"}
+# Mount the Next.js static export
+frontend_out = ROOT / "frontend" / "out"
+if frontend_out.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_out), html=True), name="frontend")
+else:
+    @app.get("/")
+    async def root():
+        return {"status": "ok", "message": "Frontend not built yet. Run npm run build in frontend directory."}
 
 @app.get("/health")
 async def health_check():

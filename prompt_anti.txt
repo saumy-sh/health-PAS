@@ -1,8 +1,0 @@
-things left to do:
- - instead of searching from net give a fixed database of policy to search from [suggested]
- - improve the main page to include why it is used,etc.
- - check the pipeline strategy and try to find sample where it actually rejects based on less weeks of treatment grounds
- - check whether it asks for documents again and again or not
- - make video
- - make readme
- - fill the form

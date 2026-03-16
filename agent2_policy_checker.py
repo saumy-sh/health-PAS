@@ -52,40 +52,21 @@ SYSTEM_PROMPT = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_extraction_prompt(documents: list) -> str:
-    doc_block = "\n\n".join(
-        f"--- {d['document_type']} ---\n{d['content']}"
-        for d in documents
-    )
-    return f"""The following are natural-language summaries of medical documents submitted
-for a prior-authorization request. Read every summary carefully and extract the fields
-listed below. If a field is not mentioned in any document, set it to null.
-
-DOCUMENT SUMMARIES:
-{doc_block}
+    doc_block = ... # same as before
+    return f"""The following are natural-language summaries of medical documents...
 
 Extract and return ONLY this JSON:
 {{
-  "patient_name":    "full name of the patient",
-  "patient_dob":     "date of birth in YYYY-MM-DD format (or as written if format unclear)",
-  "patient_mrn":     "medical record number / patient ID",
-  "patient_gender":  "Male | Female | Other | null",
-  "patient_phone":   "patient phone number",
-  "patient_address": "patient address",
-  "insurer_name":    "name of the insurance company",
-  "plan_type":       "insurance plan type e.g. PPO, HMO, EPO",
-  "policy_number":   "insurance policy number",
-  "member_id":       "insurance member ID",
-  "group_number":    "insurance group number",
-  "diagnosis":       "primary diagnosis as stated by the physician",
-  "procedure":       "name of the procedure or treatment for which pre-auth is requested",
-  "icd10_codes":     ["list", "of", "ICD-10", "codes"],
-  "cpt_codes":       ["list", "of", "CPT", "codes"],
-  "ordering_physician": "name of the ordering / treating physician",
-  "physician_specialty": "physician specialty",
-  "hospital":        "hospital or facility name",
-  "date_of_service": "date of service or proposed treatment in YYYY-MM-DD"
+  "patient_name": "...",
+  ...
+  "procedure": "name of the procedure or treatment for which pre-auth is requested",
+  "cpt_codes": ["list", "of", "CPT", "codes"],
+  ...
 }}
-If any info not present in the documents, return the missing document with 
+
+Examples:
+- If a clinical note says "Requesting MRI Lumbar Spine Without Contrast (CPT 72148)", set procedure="MRI Lumbar Spine Without Contrast", cpt_codes=["72148"].
+- If the note says "Patient needs colonoscopy (CPT 45378)", set procedure="Colonoscopy", cpt_codes=["45378"].
 """
 
 

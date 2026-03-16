@@ -13,6 +13,10 @@ import os
 import json
 import boto3
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 
 
@@ -39,7 +43,10 @@ def get_client():
     if _client is None:
         _client = boto3.client(
             service_name="bedrock-runtime",
-            region_name=AWS_REGION
+            region_name=AWS_REGION,
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),   
+            aws_session_token=os.getenv("AWS_SESSION_TOKEN")
         )
     return _client
 
@@ -67,4 +74,24 @@ def invoke(model_id: str, messages: list, system: list = None,
         body=json.dumps(body),
     )
     result = json.loads(response["body"].read())
-    return result["output"]["message"]["content"][0]["text"]
+    
+    # Check for output and text content
+    output = result.get("output", {})
+    message = output.get("message", {})
+    content = message.get("content", [])
+    
+    if content and "text" in content[0]:
+        text = content[0]["text"]
+        
+        # Bedrock's Nova sometimes returns a refusal message in the text if blocked
+        if "blocked by our content filters" in text.lower():
+            return f"ERROR: Content Filter Blocked. The model refused to process this image. Raw response: {text}"
+            
+        return text
+        
+    # Check for stopReason if text is missing
+    stop_reason = result.get("stopReason")
+    if stop_reason == "content_filtered":
+        return "ERROR: Content Filter Blocked. (stopReason: content_filtered)"
+        
+    return f"ERROR: No text output from model. stopReason: {stop_reason}. Full result: {json.dumps(result)}"

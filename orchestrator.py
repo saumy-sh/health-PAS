@@ -25,8 +25,8 @@ Pipeline redesign (v3.0):
                Checks medical_requirements against document prose
                Returns: { approval_probability, determination, requirements_checked }
 
-  • Agent 6  — EWA Pre-Auth PDF Form Filler
-               Fills the 6-page EWA form using policy_search_fields from Agent 2
+  • Agent 6  — Final JSON Report Generator
+               Generates a comprehensive structured report of the outcome
 
 Usage:
     python orchestrator.py
@@ -48,7 +48,7 @@ import agent2_policy_checker         as agent2
 import agent3_policy_retrieval       as agent3
 import agent4_document_checker       as agent4
 import agent5_eligibility_reasoning  as agent5
-import agent6_form_filler            as agent6
+import agent6_report_generator       as agent6
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,16 +56,6 @@ import agent6_form_filler            as agent6
 # Agent 1 auto-classifies every file from its content alone.
 # ─────────────────────────────────────────────────────────────────────────────
 
-DOC_PATHS = {
-    "lab_report":            "./data/patient_data/lab_report_ai.png",
-    "doctor_notes":          "./data/patient_data/doctors_notes_2weeks.png",
-    "patient_info":          "./data/patient_data/patient_ai.png",
-    "insurance_card":        "./data/patient_data/insurance_card_ai.png",
-    "pretreatment_estimate": "./data/patient_data/medical_pretreatment_estimate_ai.pdf",
-    "prescription":          "./data/patient_data/prescription_ai.png",
-    "referral_letter":       "./data/patient_data/physician_referral.png",
-    "x_ray":                 "./data/patient_data/x_ray.jpg",
-}
 
 # ── EWA Pre-Auth PDF form paths ────────────────────────────────────────────────
 EWA_FORM_PDF    = "./data/forms/Pre-Auth Form EWA.pdf"
@@ -133,7 +123,7 @@ def run_pipeline(
     -------
     dict — full pipeline result with all intermediate outputs and final status
     """
-    doc_paths  = doc_paths  or DOC_PATHS
+    doc_paths  = doc_paths or {}
     output_dir = str(Path(output_dir))
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -164,6 +154,13 @@ def run_pipeline(
         return results
 
     results["agent1"] = a1
+    print("\n[DEBUG] Agent 1 Output:\n", json.dumps(a1, indent=2))
+    
+    agent1_out_file = os.path.join(output_dir, "agent1_output.json")
+    with open(agent1_out_file, "w", encoding="utf-8") as f:
+        json.dump(_safe_serialize(a1), f, indent=2)
+    print(f"  📁 Agent 1 output saved to: {agent1_out_file}")
+
     _print_stage(1, "Document Intelligence", "DONE")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -184,10 +181,8 @@ def run_pipeline(
             "Stage 2 — Cannot identify insurance policy from submitted documents",
             [f"  • Missing: {m}" for m in missing],
         )
-        results["pipeline_status"] = "HALTED_POLICY_NOT_IDENTIFIABLE"
+        results["pipeline_status"] = "PROCEEDING_WITH_MISSING_POLICY_INFO"
         results["missing_critical"] = missing
-        results["halted_at"]        = "agent2"
-        return results
 
     # ══════════════════════════════════════════════════════════════════════════
     # STAGE 3 — Policy Retrieval + Requirement Generator
@@ -235,11 +230,9 @@ def run_pipeline(
             detail_lines.append(f"     Still missing: {item.get('info_missing', '')}")
 
         _print_halt("Stage 4 — Missing or incomplete required documents", detail_lines)
-        results["pipeline_status"] = "HALTED_MISSING_DOCUMENTS"
+        results["pipeline_status"] = "PROCEEDING_WITH_MISSING_DOCUMENTS"
         results["missing_docs"]    = a4.get("missing_documents", [])
         results["partial_docs"]    = a4.get("partial_documents", [])
-        results["halted_at"]       = "agent4"
-        return results
 
     results["agent4"] = a4
     _print_stage(4, "Missing Document Checker", "DONE")
@@ -257,43 +250,18 @@ def run_pipeline(
     _print_stage(5, "Medical Requirements + Approval Probability", "DONE")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STAGE 6 — EWA Pre-Auth PDF Form Filler
-    #   Fills the 6-page EWA pre-auth form with all collected data.
-    #   Non-blocking: continues if blank EWA PDF is not found.
+    # STAGE 6 — Final JSON Report Generator
+    #   Synthesizes all pipeline findings into a structured JSON report.
     # ══════════════════════════════════════════════════════════════════════════
-    _print_stage("6", "EWA Pre-Auth PDF Form Filler")
-    a6 = {}
-    ewa_pdf_path = Path(ewa_form_pdf)
-
-    if not ewa_pdf_path.exists():
-        print(f"  ⚠️  EWA form PDF not found at: {ewa_form_pdf}")
-        print(f"  Place Pre-Auth Form EWA.pdf at that path to enable PDF filling.")
-        print(f"  Continuing without PDF form.")
-        results["agent6"] = {"skipped": True, "reason": f"EWA form not found: {ewa_form_pdf}"}
-        _print_stage("6", "EWA Pre-Auth PDF Form Filler", "SKIP")
-
-    elif not Path(ewa_fields_json).exists():
-        print(f"  ⚠️  Fields template not found at: {ewa_fields_json}")
-        results["agent6"] = {"skipped": True, "reason": f"Fields template not found: {ewa_fields_json}"}
-        _print_stage("6", "EWA Pre-Auth PDF Form Filler", "SKIP")
-
-    else:
-        try:
-            a6 = agent6.run(
-                agent5_output=a5,
-                output_dir=output_dir,
-                form_pdf_path=str(ewa_pdf_path),
-                fields_template_path=ewa_fields_json,
-            )
-            results["agent6"] = a6
-            if a6.get("filled_pdf_path"):
-                _print_stage("6", "EWA Pre-Auth PDF Form Filler", "DONE")
-            else:
-                _print_stage("6", "EWA Pre-Auth PDF Form Filler", "WARN")
-        except Exception as e:
-            print(f"  ⚠️  EWA PDF form filling failed: {e}")
-            results["agent6"] = {"error": str(e), "filled_pdf_path": None}
-            _print_stage("6", "EWA Pre-Auth PDF Form Filler", "WARN")
+    _print_stage("6", "Final JSON Report Generator")
+    try:
+        a6 = agent6.run(agent5_output=a5)
+        results["agent6"] = a6
+        _print_stage("6", "Final JSON Report Generator", "DONE")
+    except Exception as e:
+        print(f"  ⚠️  Final report generation failed: {e}")
+        results["agent6"] = {"error": str(e)}
+        _print_stage("6", "Final JSON Report Generator", "WARN")
 
     # ══════════════════════════════════════════════════════════════════════════
     # Final summary
@@ -320,10 +288,11 @@ def run_pipeline(
           f"{len(a4.get('partial_documents', []))} partial")
     print(f"  Medical reqs met    : {len(a5.get('requirements_met', []))} | "
           f"not met: {len(a5.get('requirements_not_met', []))}")
-    if filled_pdf:
-        print(f"  EWA PDF             : {filled_pdf}")
+    report_url = a6.get("report_s3_url")
+    if report_url:
+        print(f"  Final Report URL    : {report_url}")
     else:
-        print(f"  EWA PDF             : not generated (check Stage 6 above)")
+        print(f"  Final Report        : generated locally (check Stage 6 above)")
     print(f"\n  ⏱  Total time       : {elapsed:.1f} seconds")
     print("#" * 70 + "\n")
 
@@ -338,18 +307,14 @@ def save_results(results: dict, output_dir: str = OUTPUT_DIR) -> str:
     ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
     json_name = f"pipeline_results_{ts}.json"
     
-    # Save to temp for Lambda compatibility
-    tmp_dir = "/tmp" if os.name != 'nt' else tempfile.gettempdir()
-    out_file = os.path.join(tmp_dir, json_name)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    out_file = os.path.join(output_dir, json_name)
     
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(_safe_serialize(results), f, indent=2)
     
-    # Upload to S3
-    print(f"📁 Saving results to temp: {out_file}")
-    s3_url = upload_to_s3(out_file, f"outputs/{json_name}")
-    print(f"☁️ Results uploaded to S3: {s3_url}")
-    return s3_url
+    print(f"📁 Saving results to output folder: {out_file}")
+    return out_file
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -358,7 +323,7 @@ def save_results(results: dict, output_dir: str = OUTPUT_DIR) -> str:
 
 if __name__ == "__main__":
     results = run_pipeline(
-        doc_paths=DOC_PATHS,
+        doc_paths={},
         output_dir=OUTPUT_DIR,
         ewa_form_pdf=EWA_FORM_PDF,
         ewa_fields_json=EWA_FIELDS_JSON,

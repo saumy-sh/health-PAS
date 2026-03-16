@@ -1,0 +1,8 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting pymupdf==1.24.11
+  Downloading PyMuPDF-1.24.11-cp38-abi3-win_amd64.whl.metadata (3.4 kB)
+Requirement already satisfied: Pillow in c:\users\zoome\appdata\roaming\python\python314\site-packages (12.1.0)
+Downloading PyMuPDF-1.24.11-cp38-abi3-win_amd64.whl (16.0 MB)
+   ---------------------------------------- 16.0/16.0 MB 8.4 MB/s  0:00:01
+Installing collected packages: pymupdf
+Successfully installed pymupdf-1.24.11
