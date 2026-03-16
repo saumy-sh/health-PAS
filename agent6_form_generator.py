@@ -25,6 +25,10 @@ import io
 import textwrap
 from datetime import datetime
 from pathlib import Path
+import os
+import tempfile
+
+from backend.main import upload_to_s3
 
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.pagesizes import letter
@@ -459,19 +463,27 @@ def run(agent5_output: dict,
     filled_img = _fill_form_image(form_template_path, field_values)
 
     # Step 3: Save outputs
-    ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
-    mrn = data.get("patient_mrn", "unknown").replace("-", "")
+    # ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # mrn = data.get("patient_mrn", "unknown").replace("-", "")
 
-    png_path  = str(Path(output_dir) / f"prior_auth_filled_{mrn}_{ts}.png")
-    pdf_path  = str(Path(output_dir) / f"prior_auth_filled_{mrn}_{ts}.pdf")
-    json_path = str(Path(output_dir) / f"prior_auth_filled_{mrn}_{ts}.json")
-    txt_path  = str(Path(output_dir) / f"prior_auth_filled_{mrn}_{ts}.txt")
+    # Save to /tmp for Lambda compatibility
+    tmp_dir = "/tmp" if os.name != 'nt' else tempfile.gettempdir()
+    
+    png_name  = f"prior_auth_filled_{mrn}_{ts}.png"
+    pdf_name  = f"prior_auth_filled_{mrn}_{ts}.pdf"
+    json_name = f"prior_auth_filled_{mrn}_{ts}.json"
+    txt_name  = f"prior_auth_filled_{mrn}_{ts}.txt"
+
+    png_path  = os.path.join(tmp_dir, png_name)
+    pdf_path  = os.path.join(tmp_dir, pdf_name)
+    json_path = os.path.join(tmp_dir, json_name)
+    txt_path  = os.path.join(tmp_dir, txt_name)
 
     filled_img.save(png_path)
-    print(f"  Filled PNG saved  → {png_path}")
+    print(f"  Filled PNG saved to temp → {png_path}")
 
     _save_as_pdf(filled_img, pdf_path)
-    print(f"  Filled PDF saved  → {pdf_path}")
+    print(f"  Filled PDF saved to temp → {pdf_path}")
 
     # Also save structured JSON and text summary for records
     with open(json_path, "w", encoding="utf-8") as f:
@@ -481,17 +493,26 @@ def run(agent5_output: dict,
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(form_text)
 
-    print(f"  JSON record saved → {json_path}")
-    print(f"  Text summary saved→ {txt_path}")
+    # Upload to S3
+    print(f"[Agent 6] Uploading results to S3...")
+    png_url  = upload_to_s3(png_path, f"outputs/{png_name}")
+    pdf_url  = upload_to_s3(pdf_path, f"outputs/{pdf_name}")
+    json_url = upload_to_s3(json_path, f"outputs/{json_name}")
+    txt_url  = upload_to_s3(txt_path, f"outputs/{txt_name}")
+
+    print(f"  PNG S3 URL  : {png_url}")
+    print(f"  PDF S3 URL  : {pdf_url}")
+    print(f"  JSON S3 URL : {json_url}")
+    print(f"  TXT S3 URL  : {txt_url}")
     print("[Agent 6] Prior Authorization Form Filler — DONE\n")
 
     print(form_text)
 
     return {
-        "form_png_path":  png_path,
-        "form_pdf_path":  pdf_path,
-        "form_json_path": json_path,
-        "form_txt_path":  txt_path,
+        "form_png_path":  png_url,
+        "form_pdf_path":  pdf_url,
+        "form_json_path": json_url,
+        "form_txt_path":  txt_url,
         "form_json":      field_values,
         "form_text":      form_text,
         "data":           data,

@@ -1,37 +1,18 @@
-"""
-main.py
-────────
-InsuranceHelper — FastAPI Backend Entry Point
-
-Run with:
-    cd backend
-    uvicorn main:app --reload --port 8001
-"""
-
-import sys
+import boto3
 from pathlib import Path
-
-# Ensure parent dir (health-PAS root) is on sys.path so agents can be imported
-ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
-
-from routes.analyse import router as analyse_router
+from backend.routes.analyse import router as analyse_router
 
 app = FastAPI(
     title="InsuranceHelper API",
-    description="Pre-authorization pipeline backend (Granular Testing)",
+    description="Pre-authorization pipeline backend",
     version="1.0.0",
 )
 
-# Lambda Handler
 handler = Mangum(app)
 
-# ── CORS — allow the frontend (any origin during dev) ─────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,16 +21,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routes ─────────────────────────────────────────────────────────────────────
 app.include_router(analyse_router)
 
-# ── Static Files ────────────────────────────────────────────────────────────────
-# Mount the output directory to serve the filled PDFs
-output_path = ROOT / "output"
-output_path.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(output_path)), name="static")
-
+# S3 bucket for outputs
+S3_BUCKET = "insurance-helper-outputs"
+s3_client = boto3.client("s3", region_name="us-east-1")
 
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": "InsuranceHelper API"}
+
+def upload_to_s3(local_path: str, s3_key: str) -> str:
+    """Upload a file to S3 and return a presigned URL valid for 1 hour."""
+    s3_client.upload_file(local_path, S3_BUCKET, s3_key)
+    url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": S3_BUCKET, "Key": s3_key},
+        ExpiresIn=3600
+    )
+    return url

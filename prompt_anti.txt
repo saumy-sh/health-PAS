@@ -1,16 +1,8 @@
-this project i am using agent1 to extract details from various documents but instead of specifically specifying each field to get in the prompt, i want it to get data in this format:
-document_type: llm must tell what type of document it is
-content: now this will not have separate fields but instead in a para form telling all content inside this document
-
-this agent's role is to get details from each document.now some document can be image of some x-ray, then in content it should explain what x-ray is about. this way this agent data will be used by every agent onwards.
-
-the agent2 will verify but also use the output from agent1 to get main info required to search for the policy like patient_info,insurer,insurance group,etc. whatever is required to just search for the correct policy that user has. 
-
-this data from agent2 will be given to agent3 so it just gets policy details and then find out the for which treatment/medication/procedure pre-authorisation is required as well as the requirements for the approval of pre-authorisation. it doesn't check whether those requirements are actually fullfilled or not.that's the job of next two agents(agent4 and agent5).it gives two types of requirements:one for documents that are required and one for medical conditions.documents condition tells what info is required from each document.medical condition tells about things mentioned in policy like some med
-
-agent4 then has result from agent1 as well agent3 so that it can check for missing documents(if any). it just checks using content of each given document(from agent1's response) with the reuqirements given by agent3 and also assigns priority level to each missing document with the required info needed as mentioned in the requirements.so this agent checks for only missing documents required for any important info as demanded by requirements for pre authorisation given by agent3.
-
-now agent5 checks for other requirements given by agent3 like minimum days of treatment,etc. which are not related to missing document. 
-now based on how many requirements are fulfilled,it gives a probability of pre-authorisation approval.
-
-agent6 just fills up pre authorisation form if all conditions satistfied.
+things left to do:
+ - instead of searching from net give a fixed database of policy to search from [suggested]
+ - improve the main page to include why it is used,etc.
+ - check the pipeline strategy and try to find sample where it actually rejects based on less weeks of treatment grounds
+ - check whether it asks for documents again and again or not
+ - make video
+ - make readme
+ - fill the form

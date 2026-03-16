@@ -37,6 +37,10 @@ Or import and call run_pipeline(doc_paths) from another script.
 import json
 from datetime import datetime
 from pathlib import Path
+import os
+import tempfile
+
+from backend.main import upload_to_s3
 
 # ── Import all agents ──────────────────────────────────────────────────────────
 import agent1_document_intelligence  as agent1
@@ -332,12 +336,20 @@ def run_pipeline(
 
 def save_results(results: dict, output_dir: str = OUTPUT_DIR) -> str:
     ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_file = str(Path(output_dir) / f"pipeline_results_{ts}.json")
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    json_name = f"pipeline_results_{ts}.json"
+    
+    # Save to temp for Lambda compatibility
+    tmp_dir = "/tmp" if os.name != 'nt' else tempfile.gettempdir()
+    out_file = os.path.join(tmp_dir, json_name)
+    
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(_safe_serialize(results), f, indent=2)
-    print(f"📁 Full pipeline results saved to: {out_file}")
-    return out_file
+    
+    # Upload to S3
+    print(f"📁 Saving results to temp: {out_file}")
+    s3_url = upload_to_s3(out_file, f"outputs/{json_name}")
+    print(f"☁️ Results uploaded to S3: {s3_url}")
+    return s3_url
 
 
 # ─────────────────────────────────────────────────────────────────────────────

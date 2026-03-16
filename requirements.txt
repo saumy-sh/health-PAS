@@ -1,5 +1,5 @@
 boto3>=1.34.0
-pymupdf>=1.23.0
+pymupdf==1.24.11
 Pillow>=10.0.0
 pypdf
 fastapi

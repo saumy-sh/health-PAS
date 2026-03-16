@@ -26,6 +26,10 @@ Output : dict  { "filled_pdf_path": str, "fields_filled": int, "fields_skipped":
 import json
 from datetime import datetime
 from pathlib import Path
+import os
+import tempfile
+
+from backend.main import upload_to_s3
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import FreeText
@@ -396,10 +400,17 @@ def run(
     print(f"  Data missing   : {len(skipped_keys)} fields are empty: {list(skipped_keys)[:5]}")
 
     # ── Build filled fields.json ──────────────────────────────────────────────
-    ts           = datetime.now().strftime("%Y%m%d_%H%M%S")
-    mrn          = str(data.get("patient_mrn", "unknown")).replace("-", "")
-    filled_json  = str(Path(output_dir) / f"fields_filled_{mrn}_{ts}.json")
-    output_pdf   = str(Path(output_dir) / f"PreAuth_EWA_filled_{mrn}_{ts}.pdf")
+    # ts           = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # mrn          = str(data.get("patient_mrn", "unknown")).replace("-", "")
+    
+    # Save to temp for Lambda compatibility
+    tmp_dir = "/tmp" if os.name != 'nt' else tempfile.gettempdir()
+    
+    json_name    = f"fields_filled_{mrn}_{ts}.json"
+    pdf_name     = f"PreAuth_EWA_filled_{mrn}_{ts}.pdf"
+    
+    filled_json  = os.path.join(tmp_dir, json_name)
+    output_pdf   = os.path.join(tmp_dir, pdf_name)
 
     print("[Agent 6] Substituting placeholders into fields template...")
     fields_filled, fields_skipped = _build_filled_fields_json(
@@ -426,12 +437,18 @@ def run(
             "fields_skipped":  fields_skipped,
         }
 
-    print(f"\n[Agent 6] ✅ Filled PDF saved → {output_pdf}")
+    # Upload to S3
+    print(f"[Agent 6] Uploading results to S3...")
+    pdf_url  = upload_to_s3(output_pdf, f"outputs/{pdf_name}")
+    json_url = upload_to_s3(filled_json, f"outputs/{json_name}")
+
+    print(f"  PDF S3 URL : {pdf_url}")
+    print(f"  JSON S3 URL: {json_url}")
     print("[Agent 6] EWA Pre-Auth PDF Form Filler — DONE\n")
 
     return {
-        "filled_pdf_path": output_pdf,
-        "fields_json_path": filled_json,
+        "filled_pdf_path": pdf_url,
+        "fields_json_path": json_url,
         "fields_filled":   fields_filled,
         "fields_skipped":  fields_skipped,
         "data":            data,
