@@ -2,3 +2,6 @@ boto3>=1.34.0
 pymupdf>=1.23.0
 Pillow>=10.0.0
 pypdf
+fastapi
+uvicorn
+python-multipart

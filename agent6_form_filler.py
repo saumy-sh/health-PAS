@@ -7,6 +7,10 @@ Fills the "Request for Cashless Hospitalisation for Health Insurance"
 (EWA Policy Part-C Revised) 6-page PDF using all data extracted by
 the pipeline's earlier agents.
 
+NOTE (v2 pipeline):
+  Patient / insurance data now comes from Agent 2's policy_search_fields.
+  Clinical data comes from Agent 5's data chain (agent4 → agent3 → agent2 → policy_search_fields).
+
 Strategy:
   • The EWA PDF has NO fillable form fields — it is a plain-text PDF.
   • We use the FORMS.md annotation approach:
@@ -43,10 +47,12 @@ FIELDS_TEMPLATE_PATH = "./forms/fields_template.json"
 def _build_placeholder_map(data: dict, eligibility: dict) -> dict:
     """
     Map all extracted pipeline data to the {{placeholders}} used in fields_template.json.
-    Any placeholder that cannot be filled is left as an empty string (field stays blank).
+
+    `data` is expected to be agent2's policy_search_fields (or a merged dict containing
+    the same keys). Any placeholder that cannot be filled is left as an empty string.
     """
     # Format date of birth from YYYY-MM-DD → DD/MM/YYYY
-    dob_raw = data.get("patient_dob", "")
+    dob_raw = data.get("patient_dob", "") or data.get("dob", "")
     dob_fmt = ""
     if dob_raw:
         try:
@@ -67,12 +73,12 @@ def _build_placeholder_map(data: dict, eligibility: dict) -> dict:
             pass
 
     # Gender checkboxes — put X in the right one
-    gender = (data.get("patient_gender") or "").lower()
+    gender = (data.get("patient_gender") or data.get("gender") or "").lower()
     gender_male_check   = "X" if "male" in gender and "female" not in gender else ""
     gender_female_check = "X" if "female" in gender else ""
 
     # Date of proposed treatment → admission date
-    treatment_date_raw = data.get("date_of_proposed_treatment", "")
+    treatment_date_raw = data.get("date_of_service") or data.get("date_of_proposed_treatment", "")
     treatment_date_fmt = ""
     if treatment_date_raw:
         try:
@@ -82,23 +88,23 @@ def _build_placeholder_map(data: dict, eligibility: dict) -> dict:
         except ValueError:
             treatment_date_fmt = treatment_date_raw
 
-    # Prior treatments as a readable string
+    # Prior treatments (may not be in policy_search_fields — use empty fallback)
     prior_tx_list = data.get("prior_treatments", [])
     prior_tx_str  = "; ".join(prior_tx_list) if prior_tx_list else ""
 
     # ICD-10 codes
     icd10_codes = data.get("icd10_codes", [])
-    icd10_str   = ", ".join(icd10_codes) if icd10_codes else data.get("icd10", "")
+    icd10_str   = ", ".join(icd10_codes) if icd10_codes else data.get("icd10_code", "")
 
     # CPT codes
     cpt_codes = data.get("cpt_codes", [])
     cpt_str   = ", ".join(cpt_codes) if cpt_codes else data.get("cpt", "")
 
-    # Symptom duration in days (convert from weeks)
+    # Symptom duration in days (convert from weeks if present)
     symptom_weeks = data.get("symptom_duration_weeks")
     ailment_days  = str(int(symptom_weeks) * 7) if symptom_weeks else ""
 
-    # Date of first consultation (use date_of_service or treatment date)
+    # First consultation date
     first_consult_raw = data.get("date_of_service") or data.get("date_of_proposed_treatment", "")
     first_consult_fmt = ""
     if first_consult_raw:
@@ -110,7 +116,7 @@ def _build_placeholder_map(data: dict, eligibility: dict) -> dict:
             first_consult_fmt = first_consult_raw
 
     # Investigation vs Medical management
-    procedure = (data.get("procedure") or "").lower()
+    procedure = (data.get("procedure") or data.get("procedure_identified") or "").lower()
     is_investigation  = "X" if any(k in procedure for k in ["mri", "ct", "scan", "x-ray", "xray", "imaging", "lab", "test"]) else ""
     is_medical_mgmt   = "X" if any(k in procedure for k in ["medication", "therapy", "management", "treatment", "drug"]) else ""
 
@@ -148,7 +154,7 @@ def _build_placeholder_map(data: dict, eligibility: dict) -> dict:
         "relative_phone":        data.get("emergency_contact_phone", ""),
         "member_id":             data.get("member_id", ""),
         "policy_number":         data.get("policy_number", ""),
-        "patient_address":       data.get("patient_address", ""),
+        "patient_address":       data.get("patient_address", "") or data.get("address", ""),
         "occupation":            "",
 
         # Insurance checkboxes
@@ -169,7 +175,7 @@ def _build_placeholder_map(data: dict, eligibility: dict) -> dict:
         # Treatment type checkboxes
         "treatment_medical":      is_medical_mgmt,
         "treatment_investigation": is_investigation,
-        "investigation_details":  data.get("procedure", ""),
+        "investigation_details":  data.get("procedure") or data.get("procedure_identified", ""),
         "drug_route":             "Oral",
         "surgery_name":           "",
         "icd10_pcs_code":         "",
@@ -342,13 +348,20 @@ def run(
     """
     print("\n[Agent 6] EWA Pre-Auth PDF Form Filler — START")
 
-    data       = agent5_output.get("data", {})
+    # Navigate the agent chain to reach agent2's policy_search_fields:
+    # agent5.data → agent4 output → agent4.data → agent3 output → agent3.policy_search_fields
+    a4_output  = agent5_output.get("data", {})
+    a3_output  = a4_output.get("data", {})
+    psf        = a3_output.get("policy_search_fields", {})
+
+    # Merge policy_search_fields with any extra keys from a3_output for maximum coverage
+    data = {**a3_output, **psf}
+
     eligibility = {
-        "determination":      agent5_output.get("determination"),
-        "criteria_met_count": agent5_output.get("criteria_met_count"),
-        "criteria_total":     agent5_output.get("criteria_total"),
-        "clinical_summary":   agent5_output.get("clinical_summary"),
-        "recommendation":     agent5_output.get("recommendation"),
+        "determination":     agent5_output.get("determination"),
+        "approval_probability": agent5_output.get("approval_probability"),
+        "clinical_summary":  agent5_output.get("clinical_summary"),
+        "recommendation":    agent5_output.get("recommendation"),
     }
 
     # ── Validate inputs ───────────────────────────────────────────────────────

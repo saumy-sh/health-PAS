@@ -1,449 +1,162 @@
 """
-agent3_policy_retrieval.py  (RELIABILITY FIX)
-───────────────────────────────────────────────
-Agent 3 — Policy Retrieval + Document Requirements
+agent3_policy_retrieval.py
+───────────────────────────
+Agent 3 — Policy Retrieval + Requirement Generator
 
-ROOT CAUSE OF PREVIOUS UNRELIABILITY:
-  The old Agent 3 asked an LLM to freely generate a "required_documents" list.
-  With no grounding, it hallucinated vague requirements like "Patient's medical
-  history" or "Imaging results" even when those weren't needed — and it did so
-  DIFFERENTLY on each run, causing non-deterministic pipeline halts.
+Role:
+  Given:
+    • policy_search_fields  — structured fields from Agent 2 (insurer, procedure, etc.)
+    • documents             — prose summaries from Agent 1
 
-THE FIX — Two-layer approach:
-  ① DETERMINISTIC LAYER (always runs first):
-     A hardcoded `PREAUTH_CHECKLIST` encodes the 7 pre-authorization steps
-     from the clinical guidelines. Each checklist item maps to:
-       - which document type satisfies it
-       - which data fields prove it's satisfied
-       - what to tell the user if it's missing
-     This layer never changes between runs for the same input documents.
+  This agent:
+    1. Identifies the specific treatment / procedure / medication for which
+       pre-authorization is required.
+    2. Retrieves the general pre-authorization policy criteria for that procedure.
+    3. Outputs TWO separate requirement lists:
 
-  ② LLM LAYER (used only for policy criteria assessment):
-     The LLM is now given a STRICT prompt that says:
-       "Only mark a document as missing if it is NOT covered by any
-        of the confirmed-present document types listed below."
-     The LLM's job is narrowed to: assess clinical criteria met/not met.
-     It can NO LONGER invent new document requirements.
+       document_requirements  — documents (or document content) that must be
+                                submitted. Each entry describes what document
+                                is needed and what information it must contain.
 
-  ③ Agent 3 output now includes `canonical_requirements` — the deterministic
-     checklist result — which Agent 4 uses as its authoritative source of
-     truth instead of the LLM's `required_documents`.
+       medical_requirements   — clinical / medical conditions that must be met
+                                (e.g. minimum symptom duration, step therapy
+                                trials, lab result thresholds). These do NOT
+                                refer to documents — they are facts about the
+                                patient's medical situation.
+
+  This agent does NOT check whether those requirements are fulfilled.
+  That is the job of Agent 4 (documents) and Agent 5 (medical).
+
+Input  : dict from Agent 2
+Output : {
+    "authorization_required": bool,
+    "procedure_identified":   str,
+    "document_requirements":  [{document_type, purpose, info_needed}],
+    "medical_requirements":   [{requirement, description, threshold, importance}],
+    "policy_notes":           str,
+    "data":                   agent2 output (passed through)
+  }
 """
 
 import json
+import re
+
 from bedrock_client import invoke, LITE_MODEL_ID
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DETERMINISTIC PRE-AUTH CHECKLIST
-# Based on the 7 standard pre-authorization steps:
-#   1. Insurance information
-#   2. Procedure / treatment codes
-#   3. Clinical rationale (ICD-10, diagnosis, findings)
-#   4. Past treatments and outcomes
-#   5. Expedited review evidence (if needed)
-#   6. Supporting documentation
-#   7. Completeness check
-#
-# Each entry defines:
-#   step          — human-readable step name
-#   required      — is this always required for pre-auth?
-#   satisfied_by  — list of document_types that can satisfy this requirement
-#   proof_fields  — fields in those documents that must have real values
-#   missing_msg   — what to tell the user if not satisfied
-#   document_type — the canonical document type to request if missing
-# ─────────────────────────────────────────────────────────────────────────────
-
-PREAUTH_CHECKLIST = [
-    # ── Step 1: Patient Insurance Information ─────────────────────────────────
-    {
-        "step":         "1_insurance_info",
-        "label":        "Patient Insurance Information",
-        "description":  "Patient demographics, member ID, policy number, plan type",
-        "required":     True,
-        "satisfied_by": ["Insurance Card", "Patient Information Sheet"],
-        "proof_fields": {
-            "Insurance Card":            ["insurer_name", "policy_number", "member_id"],
-            "Patient Information Sheet": ["patient_name", "dob"],
-        },
-        "missing_msg": (
-            "Insurance card is missing or incomplete. "
-            "Please provide a copy of the patient's insurance card showing: "
-            "insurer name, policy number, and member ID."
-        ),
-        "document_type": "Insurance Card",
-    },
-    {
-        "step":         "1_patient_demographics",
-        "label":        "Patient Demographics",
-        "description":  "Full name, date of birth, address, MRN",
-        "required":     True,
-        "satisfied_by": ["Patient Information Sheet", "Doctor Notes", "Insurance Card"],
-        "proof_fields": {
-            "Patient Information Sheet": ["patient_name", "dob"],
-            "Doctor Notes":             ["ordering_physician"],
-            "Insurance Card":           ["insurer_name"],
-        },
-        "missing_msg": (
-            "Patient information sheet is missing. "
-            "Please provide a form with patient name, date of birth, and address."
-        ),
-        "document_type": "Patient Information Sheet",
-    },
-
-    # ── Step 2: Procedure / Treatment Codes ──────────────────────────────────
-    {
-        "step":         "2_procedure_codes",
-        "label":        "Procedure Codes (CPT/HCPCS)",
-        "description":  "CPT or HCPCS code for the requested procedure",
-        "required":     True,
-        "satisfied_by": ["Doctor Notes", "Medical Pretreatment Estimate"],
-        "proof_fields": {
-            "Doctor Notes":                  ["requested_procedure", "cpt_codes"],
-            "Medical Pretreatment Estimate": ["total_estimated_cost", "cpt_codes"],
-        },
-        "missing_msg": (
-            "No CPT procedure code found. "
-            "The doctor notes or pretreatment estimate must include the CPT code "
-            "for the requested procedure."
-        ),
-        "document_type": "Doctor Notes",
-    },
-
-    # ── Step 3: Clinical Rationale ────────────────────────────────────────────
-    {
-        "step":         "3_diagnosis_icd10",
-        "label":        "Primary Diagnosis with ICD-10 Code",
-        "description":  "ICD-10 diagnosis code and primary diagnosis description",
-        "required":     True,
-        "satisfied_by": ["Doctor Notes", "Physician Referral"],
-        "proof_fields": {
-            "Doctor Notes":      ["diagnosis", "icd10_codes"],
-            "Physician Referral": ["reason_for_referral"],
-        },
-        "missing_msg": (
-            "ICD-10 diagnosis code is missing. "
-            "Please ask the ordering physician to include the ICD-10 code "
-            "in the clinical notes."
-        ),
-        "document_type": "Doctor Notes",
-    },
-    {
-        "step":         "3_clinical_findings",
-        "label":        "Clinical Examination Findings",
-        "description":  "Documented physical examination findings supporting the diagnosis",
-        "required":     True,
-        "satisfied_by": ["Doctor Notes"],
-        "proof_fields": {
-            "Doctor Notes": ["clinical_findings"],
-        },
-        "missing_msg": (
-            "Clinical examination findings are not documented. "
-            "Please ask the physician to include examination findings "
-            "(e.g. SLR test results, neurological exam) in the clinical notes."
-        ),
-        "document_type": "Doctor Notes",
-    },
-
-    # ── Step 4: Past Treatments and Outcomes ──────────────────────────────────
-    {
-        "step":         "4_prior_treatments",
-        "label":        "Prior Treatments / Step Therapy Documentation",
-        "description":  "List of prior treatments tried, duration, and outcomes",
-        "required":     True,
-        "satisfied_by": ["Doctor Notes", "Physician Referral", "Prior Treatment Documentation"],
-        "proof_fields": {
-            "Doctor Notes":                   ["prior_treatments"],
-            "Physician Referral":             ["reason_for_referral"],
-            "Prior Treatment Documentation":  ["prior_treatments"],
-        },
-        "missing_msg": (
-            "Prior treatment history is not documented. "
-            "Clinical notes or a referral letter must list the treatments tried "
-            "(e.g. NSAIDs, physical therapy), how long, and why they were insufficient."
-        ),
-        "document_type": "Doctor Notes",
-    },
-
-    # ── Step 5: Expedited Review (conditional) ────────────────────────────────
-    {
-        "step":         "5_expedited_review",
-        "label":        "Expedited Review Justification (if urgent)",
-        "description":  "Documentation of urgency if expedited review is requested",
-        "required":     False,   # only required if urgency flag is set
-        "satisfied_by": ["Doctor Notes"],
-        "proof_fields": {
-            "Doctor Notes": ["clinical_findings"],
-        },
-        "missing_msg": (
-            "Expedited review was requested but no urgency justification was found. "
-            "Please include a statement explaining why delayed treatment would cause harm."
-        ),
-        "document_type": "Doctor Notes",
-    },
-
-    # ── Step 6: Supporting Documentation ─────────────────────────────────────
-    {
-        "step":         "6_cost_estimate",
-        "label":        "Pretreatment Cost Estimate",
-        "description":  "Estimated cost with CPT codes and line items",
-        "required":     True,
-        "satisfied_by": ["Medical Pretreatment Estimate"],
-        "proof_fields": {
-            "Medical Pretreatment Estimate": ["total_estimated_cost"],
-        },
-        "missing_msg": (
-            "A pretreatment cost estimate is required. "
-            "Please obtain an itemized estimate from the treating facility "
-            "that includes CPT codes and estimated costs."
-        ),
-        "document_type": "Medical Pretreatment Estimate",
-    },
-    {
-        "step":         "6_ordering_physician",
-        "label":        "Ordering Physician Credentials",
-        "description":  "Physician name, NPI, specialty, and contact",
-        "required":     True,
-        "satisfied_by": ["Doctor Notes", "Physician Referral", "Prescription"],
-        "proof_fields": {
-            "Doctor Notes":      ["ordering_physician", "physician_specialty"],
-            "Physician Referral": ["referring_physician"],
-            "Prescription":      ["prescribing_physician"],
-        },
-        "missing_msg": (
-            "Ordering physician information is missing. "
-            "Clinical notes must include the physician's name, NPI, and specialty."
-        ),
-        "document_type": "Doctor Notes",
-    },
-
-    # ── Step 7: Additional clinical support (procedure-specific) ─────────────
-    {
-        "step":         "6_lab_results",
-        "label":        "Lab Results (if clinically relevant)",
-        "description":  "Recent lab work supporting the clinical picture",
-        "required":     False,   # nice-to-have, not always mandatory
-        "satisfied_by": ["Lab Report"],
-        "proof_fields": {
-            "Lab Report": ["test_name", "results"],
-        },
-        "missing_msg": (
-            "Lab results referenced in clinical notes are not attached. "
-            "If labs were ordered, please include the lab report."
-        ),
-        "document_type": "Lab Report",
-    },
-    {
-        "step":         "6_prescription",
-        "label":        "Prescription Record (for medication trials)",
-        "description":  "Prescription evidence of medication trial",
-        "required":     False,   # required only if step therapy includes medications
-        "satisfied_by": ["Prescription", "Doctor Notes"],
-        "proof_fields": {
-            "Prescription": ["medication_name", "duration"],
-            "Doctor Notes": ["prior_treatments"],
-        },
-        "missing_msg": (
-            "Prescription record for the medication trial is missing. "
-            "Please attach the prescription for NSAIDs or other medications "
-            "that were part of the required step therapy."
-        ),
-        "document_type": "Prescription",
-    },
-]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Deterministic checklist evaluation
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _evaluate_checklist(data: dict) -> dict:
-    """
-    Evaluate every checklist item against the ACTUAL extracted document content.
-    This is 100% deterministic — same input always gives same output.
-
-    Returns:
-      satisfied       : list of satisfied steps
-      missing_required: list of required steps not satisfied (pipeline blockers)
-      missing_optional: list of optional steps not satisfied (warnings only)
-      all_required_met: bool
-    """
-    document_content_map = data.get("document_content_map", {})
-    documents_present    = data.get("documents_present", {})
-
-    # Build a flat lookup of what document types are present and their content
-    # Use document_content_map if available (new Agent 1), else fall back
-    available_doc_types = set(document_content_map.keys())
-    if not available_doc_types:
-        # Fallback from documents list
-        available_doc_types = {
-            doc.get("document_type")
-            for doc in data.get("documents", [])
-        }
-
-    satisfied        = []
-    missing_required = []
-    missing_optional = []
-
-    for item in PREAUTH_CHECKLIST:
-        step   = item["step"]
-        label  = item["label"]
-        req    = item["required"]
-
-        # Check if any satisfying document type is present AND has the proof fields
-        step_satisfied = False
-        satisfied_by_doc = None
-
-        for doc_type in item["satisfied_by"]:
-            if doc_type not in available_doc_types:
-                continue
-
-            # Document is present — now check if proof fields have real values
-            content        = document_content_map.get(doc_type, {})
-            required_fields = item["proof_fields"].get(doc_type, [])
-
-            if not required_fields:
-                # No field requirements — presence of the doc is enough
-                step_satisfied   = True
-                satisfied_by_doc = doc_type
-                break
-
-            # Check that at least the first critical field has a real value
-            # (We don't require ALL fields — just that the key content is there)
-            fields_present = [
-                f for f in required_fields
-                if content.get(f) and content.get(f) != []
-                   and str(content.get(f)).strip() not in ("", "null", "None")
-            ]
-
-            # Satisfied if majority of proof fields are present
-            if len(fields_present) >= max(1, len(required_fields) // 2):
-                step_satisfied   = True
-                satisfied_by_doc = doc_type
-                break
-
-        if step_satisfied:
-            satisfied.append({
-                "step":         step,
-                "label":        label,
-                "satisfied_by": satisfied_by_doc,
-                "required":     req,
-            })
-        elif req:
-            missing_required.append({
-                "step":          step,
-                "label":         label,
-                "required":      True,
-                "satisfying_docs": item["satisfied_by"],
-                "document_type": item["document_type"],
-                "description":   item["description"],
-                "missing_msg":   item["missing_msg"],
-            })
-        else:
-            missing_optional.append({
-                "step":          step,
-                "label":         label,
-                "required":      False,
-                "satisfying_docs": item["satisfied_by"],
-                "document_type": item["document_type"],
-                "description":   item["description"],
-                "missing_msg":   item["missing_msg"],
-            })
-
-    return {
-        "satisfied":          satisfied,
-        "missing_required":   missing_required,
-        "missing_optional":   missing_optional,
-        "all_required_met":   len(missing_required) == 0,
-        "satisfied_count":    len(satisfied),
-        "total_required":     sum(1 for i in PREAUTH_CHECKLIST if i["required"]),
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# LLM prompt — narrowed to clinical criteria ONLY, cannot invent doc requirements
+# Prompts
 # ─────────────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = [
     {
         "text": (
-            "You are a senior prior-authorization policy specialist. "
-            "Your ONLY job in this call is to assess whether the clinical criteria "
-            "for the requested procedure are met. "
-            "Do NOT generate new document requirements — document checking is handled separately. "
-            "Be specific and clinically precise. "
+            "You are a senior prior-authorization policy specialist at an insurance company. "
+            "Your job is to identify what procedure/treatment/medication needs pre-authorization "
+            "and enumerate the requirements for that pre-authorization — both what documents must "
+            "be submitted and what medical/clinical conditions must be met. "
+            "Do NOT evaluate whether those requirements are currently fulfilled. "
+            "Just list what is required. "
             "Return ONLY a valid JSON object — no markdown, no preamble."
         )
     }
 ]
 
 
-def _build_criteria_prompt(data: dict, checklist_result: dict) -> str:
-    """
-    Narrowed LLM prompt: assess clinical criteria only.
-    The list of confirmed-present documents is injected so the LLM
-    cannot hallucinate requirements for documents already provided.
-    """
-    confirmed_present = [s["satisfied_by"] for s in checklist_result["satisfied"]]
-    confirmed_missing = [m["label"] for m in checklist_result["missing_required"]]
+def _build_policy_prompt(fields: dict, documents: list) -> str:
+    doc_summaries = "\n\n".join(
+        f"[{d['document_type']}]\n{d['content']}"
+        for d in documents
+    )
 
-    return f"""Assess the clinical criteria for this prior-authorization request.
+    return f"""A patient is requesting prior authorization for a medical procedure/treatment/medication.
 
-CLAIM DETAILS:
-  Insurer       : {data.get('insurer')}
-  Diagnosis     : {data.get('diagnosis')} ({data.get('icd10')})
-  Procedure     : {data.get('procedure')} (CPT: {data.get('cpt')})
-  Physician     : {data.get('ordering_physician')} — {data.get('physician_specialty')}
-  Symptom weeks : {data.get('symptom_duration_weeks')}
-  Pain score    : {data.get('pain_score')}/10
-  Findings      : {data.get('clinical_findings')}
-  Prior Tx      : {json.dumps(data.get('prior_treatments', []))}
-  Medications   : {json.dumps(data.get('prescribed_medications', []))}
+POLICY SEARCH FIELDS (from submitted documents):
+  Insurer           : {fields.get('insurer_name')}
+  Plan type         : {fields.get('plan_type')}
+  Policy number     : {fields.get('policy_number')}
+  Member ID         : {fields.get('member_id')}
+  Group number      : {fields.get('group_number')}
+  Diagnosis         : {fields.get('diagnosis')}
+  Procedure / Tx    : {fields.get('procedure')}
+  ICD-10 codes      : {fields.get('icd10_codes')}
+  CPT codes         : {fields.get('cpt_codes')}
+  Ordering physician: {fields.get('ordering_physician')} ({fields.get('physician_specialty')})
 
-DOCUMENTS CONFIRMED PRESENT (do NOT request these — they are already submitted):
-  {json.dumps(confirmed_present)}
+DOCUMENT SUMMARIES:
+{doc_summaries}
 
-DOCUMENT STEPS NOT YET SATISFIED (already identified by document checker):
-  {json.dumps(confirmed_missing)}
+Based on the above, determine:
+1. Does this procedure/treatment require prior authorization? (Most imaging, surgeries,
+   specialist procedures, and expensive medications do.)
+2. What is the specific procedure/treatment/medication for which pre-auth is being requested?
 
-YOUR TASK — assess ONLY clinical compliance criteria:
-1. Is the minimum symptom duration met for this procedure?
-2. Is step therapy / conservative treatment documented and sufficient?
-3. Are clinical examination findings adequate?
-4. Is there a medication trial documented?
-5. Is specialist referral required and present?
+Then enumerate ALL pre-authorization requirements in two categories:
 
-IMPORTANT: Do NOT add any new document requirements. Document requirements are
-already handled. Only assess whether clinical evidence in the submitted documents
-meets the medical necessity criteria for this procedure.
+DOCUMENT REQUIREMENTS — what documents (or document content) must be provided:
+  For each, specify: what type of document, why it is needed, and exactly what
+  information that document must contain.
+
+MEDICAL REQUIREMENTS — clinical conditions that must be met (not document-related):
+  Examples: minimum weeks of conservative treatment tried, step therapy medications
+  tried first, specialist consultation required, minimum pain score, lab result
+  thresholds, prior imaging required, age/weight criteria, etc.
+  For each, specify the exact requirement, any numeric threshold, and why it matters.
 
 Return JSON:
 {{
-  "authorization_required": true,
-  "primary_cpt_requiring_auth": string,
-  "standard_clinical_criteria": {{
-    "minimum_symptom_duration_weeks": integer,
-    "minimum_symptom_duration_met": true | false,
-    "actual_symptom_duration_weeks": integer,
-    "step_therapy_required": true | false,
-    "step_therapy_steps_required": [string],
-    "step_therapy_steps_completed": [string],
-    "step_therapy_met": true | false,
-    "step_therapy_gaps": [string],
-    "clinical_exam_required": true | false,
-    "clinical_exam_met": true | false,
-    "specialist_referral_required": true | false,
-    "specialist_referral_met": true | false,
-    "medication_trial_required": true | false,
-    "medication_trial_details": string,
-    "medication_trial_met": true | false
-  }},
-  "criteria_met": [string],
-  "criteria_not_met": [string],
-  "likelihood_of_approval": "high" | "medium" | "low",
-  "policy_notes": string,
-  "reasoning": string
+  "authorization_required": true | false,
+  "procedure_identified": "name of the procedure/treatment/medication requiring pre-auth",
+  "document_requirements": [
+    {{
+      "document_type": "e.g. Doctor's Clinical Notes",
+      "purpose": "why this document is required",
+      "info_needed": "specific information this document must contain"
+    }}
+  ],
+  "medical_requirements": [
+    {{
+      "requirement": "short name for this requirement",
+      "description": "full description of what must be true",
+      "threshold": "numeric or categorical threshold if applicable, else null",
+      "importance": "required | recommended"
+    }}
+  ],
+  "policy_notes": "any general notes about this insurer's pre-auth policy for this procedure"
 }}"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JSON parser
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _safe_parse(raw: str) -> dict:
+    text = raw.strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    if "```" in text:
+        for part in text.split("```")[1:]:
+            candidate = part.strip()
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:].strip()
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+    m = re.search(r'\{.*\}', text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    print(f"  [Agent3] ❌ JSON parse failed. Raw: {raw[:300]}")
+    return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -451,134 +164,114 @@ Return JSON:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run(agent2_output: dict) -> dict:
-    print("\n[Agent 3] Policy Retrieval Agent — START")
+    print("\n[Agent 3] Policy Retrieval + Requirement Generator — START")
 
-    data = agent2_output.get("data", agent2_output)
+    fields    = agent2_output.get("policy_search_fields", {})
+    documents = agent2_output.get("documents", [])
 
-    print(f"  Insurer   : {data.get('insurer')}")
-    print(f"  CPT codes : {data.get('cpt_codes')}")
-    print(f"  ICD-10    : {data.get('icd10_codes')}")
+    print(f"  Insurer    : {fields.get('insurer_name')}")
+    print(f"  Procedure  : {fields.get('procedure')}")
+    print(f"  ICD-10     : {fields.get('icd10_codes')}")
+    print(f"  Docs from Agent 1: {len(documents)}")
 
-    # ── Step 1: DETERMINISTIC checklist evaluation ────────────────────────────
-    print("[Agent 3] Running deterministic pre-auth checklist...")
-    checklist_result = _evaluate_checklist(data)
-
-    print(f"  Checklist: {checklist_result['satisfied_count']}/{checklist_result['total_required']} required steps satisfied")
-    for s in checklist_result["satisfied"]:
-        print(f"    ✅ {s['label']}  (via {s['satisfied_by']})")
-    for m in checklist_result["missing_required"]:
-        print(f"    ❌ {m['label']}  — {m['missing_msg'][:60]}...")
-    for m in checklist_result["missing_optional"]:
-        print(f"    ⚠️  {m['label']}  (optional — not blocking)")
-
-    # ── Step 2: LLM clinical criteria assessment (narrowed scope) ────────────
-    print("[Agent 3] Calling Nova Lite for clinical criteria assessment...")
-    prompt   = _build_criteria_prompt(data, checklist_result)
+    print("[Agent 3] Calling Nova Lite — policy retrieval and requirement enumeration...")
+    prompt   = _build_policy_prompt(fields, documents)
     messages = [{"role": "user", "content": [{"text": prompt}]}]
 
     raw = invoke(
         model_id=LITE_MODEL_ID,
         messages=messages,
         system=SYSTEM_PROMPT,
-        max_tokens=1000,
-        temperature=0.0,   # zero temp = maximum determinism
+        max_tokens=2000,
+        temperature=0.0,  # maximum determinism
     )
 
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.lower().startswith("json"):
-            text = text[4:]
-    try:
-        policy_analysis = json.loads(text.strip())
-    except json.JSONDecodeError:
-        print("[Agent 3] ⚠  JSON parse error — using checklist-only result")
-        policy_analysis = {
-            "authorization_required":   True,
-            "primary_cpt_requiring_auth": data.get("cpt"),
-            "standard_clinical_criteria": {},
-            "criteria_met":             [s["label"] for s in checklist_result["satisfied"]],
-            "criteria_not_met":         [m["label"] for m in checklist_result["missing_required"]],
-            "likelihood_of_approval":   "medium",
-            "policy_notes":             "LLM criteria assessment failed — checklist used.",
-            "reasoning":                raw,
+    result = _safe_parse(raw)
+
+    if not result:
+        print("[Agent 3] ⚠  Parse failed — using minimal fallback")
+        result = {
+            "authorization_required": True,
+            "procedure_identified":   fields.get("procedure", "Unknown procedure"),
+            "document_requirements":  [],
+            "medical_requirements":   [],
+            "policy_notes":           "Policy retrieval failed — manual review required.",
         }
 
-    # ── Step 3: Build required_documents from DETERMINISTIC checklist ─────────
-    # This replaces the LLM-generated required_documents list entirely.
-    # It is grounded in actual submitted documents and never hallucinates.
-    required_documents = []
-    for item in PREAUTH_CHECKLIST:
-        if not item["required"]:
-            continue
-        step_label = item["label"]
-        # Check if this step was satisfied
-        satisfied = any(
-            s["step"] == item["step"]
-            for s in checklist_result["satisfied"]
-        )
-        required_documents.append({
-            "document_name":      step_label,
-            "document_type":      item["document_type"],
-            "info_to_include":    item["description"],
-            "satisfying_docs":    item["satisfied_by"],
-            "currently_available": satisfied,
-        })
+    doc_reqs     = result.get("document_requirements", [])
+    med_reqs     = result.get("medical_requirements", [])
+    auth_required = result.get("authorization_required", True)
 
-    # Missing docs = required checklist items not yet satisfied
-    missing_docs = [
-        {
-            "document_name":   m["label"],
-            "document_type":   m["document_type"],
-            "info_required":   m["description"],
-            "why_needed":      m["missing_msg"],
-            "satisfying_docs": m["satisfying_docs"],
-        }
-        for m in checklist_result["missing_required"]
-    ]
-
-    # Optional items that are missing = soft warnings only
-    optional_missing = [
-        {
-            "document_name":   m["label"],
-            "document_type":   m["document_type"],
-            "info_required":   m["description"],
-            "why_needed":      m["missing_msg"],
-        }
-        for m in checklist_result["missing_optional"]
-    ]
-
-    policy_analysis["required_documents"] = required_documents
+    print(f"  Auth required        : {auth_required}")
+    print(f"  Procedure identified : {result.get('procedure_identified')}")
+    print(f"  Document requirements: {len(doc_reqs)}")
+    for r in doc_reqs:
+        print(f"    📄 [{r.get('document_type')}] — {r.get('purpose', '')[:60]}")
+    print(f"  Medical requirements : {len(med_reqs)}")
+    for r in med_reqs:
+        print(f"    🏥 [{r.get('importance', 'required')}] {r.get('requirement')} — {str(r.get('description', ''))[:60]}")
 
     output = {
-        "authorization_required": policy_analysis.get("authorization_required", True),
-        "policy_analysis":        policy_analysis,
-
-        # ── DETERMINISTIC results (authoritative for Agent 4) ─────────────
-        "canonical_requirements": required_documents,   # grounded, not hallucinated
-        "checklist_result":       checklist_result,
-
-        # ── Missing docs from checklist (not from LLM) ────────────────────
-        "missing_documents":      missing_docs,
-        "optional_missing":       optional_missing,
-        "missing_information":    [],
-        "unmet_requirements":     [],
-
-        "criteria_not_met":       policy_analysis.get("criteria_not_met", []),
-        "data":                   data,
+        "authorization_required": auth_required,
+        "procedure_identified":   result.get("procedure_identified"),
+        "document_requirements":  doc_reqs,
+        "medical_requirements":   med_reqs,
+        "policy_notes":           result.get("policy_notes", ""),
+        # Pass everything through for downstream agents
+        "policy_search_fields":   fields,
+        "documents":              documents,  # agent1 docs
     }
 
-    print(f"  Auth required       : {output['authorization_required']}")
-    print(f"  Approval likelihood : {policy_analysis.get('likelihood_of_approval')}")
-    print(f"  All required docs   : {checklist_result['all_required_met']}")
-    if missing_docs:
-        print("  Missing required docs:")
-        for d in missing_docs:
-            print(f"    ❌ [{d['document_type']}] {d['document_name']}")
-    if optional_missing:
-        print("  Optional missing:")
-        for d in optional_missing:
-            print(f"    ⚠️  {d['document_name']}")
-
-    print("[Agent 3] Policy Retrieval Agent — DONE\n")
+    print("[Agent 3] Policy Retrieval + Requirement Generator — DONE\n")
     return output
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Standalone test
+# ─────────────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    mock_input = {
+        "ready": True,
+        "policy_search_fields": {
+            "patient_name":      "John R. Doe",
+            "patient_dob":       "1985-05-12",
+            "patient_mrn":       "PT-88293",
+            "insurer_name":      "BlueCross BlueShield",
+            "plan_type":         "PPO",
+            "policy_number":     "BCBS-99001122",
+            "member_id":         "BCBS-9900122",
+            "group_number":      "8800221",
+            "diagnosis":         "Lumbar Radiculopathy",
+            "procedure":         "MRI Lumbar Spine Without Contrast",
+            "icd10_codes":       ["M54.16"],
+            "cpt_codes":         ["72148"],
+            "ordering_physician": "Dr. Sarah Jenkins",
+            "physician_specialty": "Orthopedic Surgery",
+        },
+        "documents": [
+            {
+                "document_type": "Doctor's Clinical Notes",
+                "content": (
+                    "Clinical notes from Dr. Sarah Jenkins at Metropolitan General Hospital. "
+                    "Patient John R. Doe has been experiencing lower back pain radiating down "
+                    "the right leg for 7 weeks. Diagnosis: Lumbar Radiculopathy (M54.16). "
+                    "Positive SLR at 30 degrees. Prior treatments: NSAIDs for 4 weeks with "
+                    "minimal relief, physical therapy for 3 weeks. Requesting MRI Lumbar "
+                    "Spine Without Contrast (CPT 72148)."
+                ),
+            },
+            {
+                "document_type": "Insurance Card",
+                "content": (
+                    "BlueCross BlueShield PPO insurance card. Member: John R. Doe. "
+                    "Member ID: BCBS-9900122. Policy: BCBS-99001122. Group: 8800221."
+                ),
+            },
+        ],
+    }
+    result = run(mock_input)
+    print(json.dumps(
+        {k: v for k, v in result.items() if k not in ("documents", "policy_search_fields")},
+        indent=2
+    ))

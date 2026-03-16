@@ -1,156 +1,136 @@
 """
-agent4_document_checker.py  (RELIABILITY FIX)
-───────────────────────────────────────────────
-Agent 4 — Document Requirement Checker
+agent4_document_checker.py
+───────────────────────────
+Agent 4 — Missing Document Checker
 
-RELIABILITY FIX:
-  Old Agent 4 used the LLM's `required_documents` list as its source of truth.
-  Since that list was hallucinated by Agent 3's LLM, Agent 4 would flag documents
-  like "Patient's medical history" as missing even when all relevant content
-  was already present in submitted documents — and it did so inconsistently.
+Role:
+  Given:
+    • documents             — prose summaries from Agent 1
+    • document_requirements — list from Agent 3 describing what docs must be submitted
+                              and what information each must contain
 
-  New Agent 4 uses `canonical_requirements` from Agent 3 — the deterministic
-  checklist result. That checklist was already evaluated against actual submitted
-  document content. Agent 4's job is now to:
+  This agent uses an LLM to compare the submitted document content against each
+  document requirement and identifies:
+    • Which requirements are SATISFIED by the submitted documents
+    • Which documents are MISSING (no submitted document covers the requirement)
+    • Which documents are PARTIALLY PRESENT (document exists but key info is absent)
 
-  ① Re-verify each canonical requirement using full document CONTENT values
-     (not just field names) — catch cases where a doc is present but empty
-  ② Run field-level completeness checks on partial documents
-  ③ Generate precise, actionable user-facing messages
-  ④ Produce a stable, deterministic can_proceed decision
+  Each missing/partial document gets:
+    • priority       — HIGH (blocks approval) or LOW (recommended)
+    • info_needed    — exactly what information is required
+    • reason         — why it is needed for pre-authorization
 
-  The LLM in Agent 4 is now used ONLY for generating human-readable instructions.
-  The pass/fail decision is made programmatically.
+  This agent checks ONLY document-related requirements.
+  Medical/clinical requirements are checked by Agent 5.
+
+Input  : dict from Agent 3
+Output : {
+    "can_proceed":        bool,
+    "satisfied":          [{requirement summary}],
+    "missing_documents":  [{document_type, priority, info_needed, reason}],
+    "partial_documents":  [{document_type, priority, missing_info, present_info}],
+    "documents":          [agent1 docs — passed through],
+    "document_requirements": [passed through for reference],
+    "data":               agent3 output (passed through)
+  }
 """
 
 import json
+import re
+
 from bedrock_client import invoke, MICRO_MODEL_ID
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Critical fields per document type
+# Prompt
 # ─────────────────────────────────────────────────────────────────────────────
 
-CRITICAL_FIELDS_BY_DOC = {
-    "Doctor Notes": [
-        "diagnosis", "icd10_codes", "clinical_findings",
-        "requested_procedure", "cpt_codes", "ordering_physician",
-    ],
-    "Insurance Card": [
-        "insurer_name", "policy_number", "member_id",
-    ],
-    "Patient Information Sheet": [
-        "patient_name", "dob",
-    ],
-    "Lab Report": [
-        "test_name", "results",
-    ],
-    "Medical Pretreatment Estimate": [
-        "total_estimated_cost",
-    ],
-    "Physician Referral": [
-        "referring_physician", "reason_for_referral",
-    ],
-    "Prescription": [
-        "medication_name", "duration",
-    ],
-    "Prior Treatment Documentation": [
-        "prior_treatments",
-    ],
-}
-
-FIELD_HELP = {
-    "diagnosis":           "primary diagnosis name",
-    "icd10_codes":         "ICD-10 code(s)",
-    "clinical_findings":   "physical examination findings",
-    "requested_procedure": "name of the requested procedure",
-    "cpt_codes":           "CPT procedure code(s)",
-    "ordering_physician":  "ordering physician name",
-    "insurer_name":        "insurance company name",
-    "policy_number":       "policy number",
-    "member_id":           "member ID",
-    "patient_name":        "patient full name",
-    "dob":                 "date of birth",
-    "test_name":           "lab test name",
-    "results":             "lab results",
-    "total_estimated_cost": "total estimated cost",
-    "referring_physician": "referring physician name",
-    "reason_for_referral": "reason for referral",
-    "medication_name":     "medication name",
-    "duration":            "medication duration",
-    "prior_treatments":    "list of prior treatments with duration and outcomes",
-}
-
-
-def _has_real_value(val) -> bool:
-    """Return True only if a field has a meaningful non-empty value."""
-    if val is None:
-        return False
-    if isinstance(val, list):
-        return len(val) > 0 and any(
-            v and str(v).strip() not in ("", "null", "None") for v in val
+SYSTEM_PROMPT = [
+    {
+        "text": (
+            "You are a prior-authorization document reviewer. "
+            "You check whether submitted medical documents satisfy specified requirements. "
+            "Compare each requirement against the actual document content and determine "
+            "whether it is fully satisfied, partially satisfied, or missing entirely. "
+            "Return ONLY a valid JSON object — no markdown, no preamble."
         )
-    return str(val).strip() not in ("", "null", "None")
-
-
-def _check_document_completeness(doc_type: str, content: dict) -> dict:
-    """
-    Programmatically check a document's critical fields.
-    Returns which fields are present vs missing.
-    """
-    critical = CRITICAL_FIELDS_BY_DOC.get(doc_type, [])
-    present  = [f for f in critical if _has_real_value(content.get(f))]
-    missing  = [f for f in critical if not _has_real_value(content.get(f))]
-    score    = round(len(present) / len(critical), 2) if critical else 1.0
-
-    return {
-        "completeness_score":      score,
-        "present_critical_fields": present,
-        "missing_critical_fields": missing,
-        "is_complete":             len(missing) == 0,
-        "is_partial":              0 < len(missing) < len(critical),
-        "is_empty":                len(present) == 0,
     }
+]
 
 
-def _build_user_fix_instruction(doc_type: str, missing_fields: list) -> str:
-    """Build a plain-English instruction for the user."""
-    field_descs = [
-        f"`{f}` ({FIELD_HELP.get(f, f.replace('_', ' '))})"
-        for f in missing_fields
-    ]
-    fields_str = ", ".join(field_descs)
-
-    templates = {
-        "Doctor Notes": (
-            f"Please ask your physician to update the clinical notes to include: {fields_str}."
-        ),
-        "Insurance Card": (
-            f"Please provide a clearer copy of your insurance card that clearly shows: {fields_str}."
-        ),
-        "Patient Information Sheet": (
-            f"Please complete the patient information form — missing: {fields_str}."
-        ),
-        "Lab Report": (
-            f"The lab report is missing: {fields_str}. Please obtain an updated report."
-        ),
-        "Medical Pretreatment Estimate": (
-            f"The pretreatment estimate is missing: {fields_str}. "
-            f"Please ask the facility to update it."
-        ),
-        "Physician Referral": (
-            f"The referral letter is missing: {fields_str}. "
-            f"Please ask the referring physician to include these details."
-        ),
-        "Prescription": (
-            f"The prescription is missing: {fields_str}. "
-            f"Please ask the prescribing physician to update it."
-        ),
-    }
-    return templates.get(
-        doc_type,
-        f"Please update {doc_type} to include: {fields_str}."
+def _build_check_prompt(doc_requirements: list, documents: list) -> str:
+    req_block = "\n".join(
+        f"{i+1}. [{r.get('document_type')}]\n"
+        f"   Purpose     : {r.get('purpose')}\n"
+        f"   Info needed : {r.get('info_needed')}"
+        for i, r in enumerate(doc_requirements)
     )
+
+    doc_block = "\n\n".join(
+        f"--- {d['document_type']} ---\n{d['content']}"
+        for d in documents
+    )
+
+    return f"""You are reviewing submitted medical documents against pre-authorization requirements.
+
+DOCUMENT REQUIREMENTS (what must be submitted):
+{req_block}
+
+SUBMITTED DOCUMENTS (actual content):
+{doc_block}
+
+For EACH requirement above, determine:
+- SATISFIED: a submitted document fully covers this requirement with the needed information
+- PARTIAL: a submitted document partially covers this (exists but some info is missing)
+- MISSING: no submitted document satisfies this requirement at all
+
+For each result, identify which submitted document (if any) covers it, and what specific
+information is present vs what is still missing.
+
+Return JSON:
+{{
+  "checks": [
+    {{
+      "requirement_index": 1,
+      "document_type_required": "string",
+      "status": "satisfied" | "partial" | "missing",
+      "satisfied_by": "document type from submitted docs that covers this, or null",
+      "info_present": "what relevant information was found",
+      "info_missing": "what specific information is still absent, or null if satisfied",
+      "priority": "HIGH" | "LOW",
+      "priority_reason": "why HIGH or LOW priority"
+    }}
+  ]
+}}
+
+Assign HIGH priority to requirements that are critical for approval (insurance info,
+diagnosis, procedure, physician credentials). LOW priority for supplementary documents.
+"""
+
+
+def _safe_parse(raw: str) -> dict:
+    text = raw.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    if "```" in text:
+        for part in text.split("```")[1:]:
+            candidate = part.strip()
+            if candidate.lower().startswith("json"):
+                candidate = candidate[4:].strip()
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+    m = re.search(r'\{.*\}', text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except json.JSONDecodeError:
+            pass
+    print(f"  [Agent4] ❌ JSON parse failed. Raw: {raw[:300]}")
+    return {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,239 +138,157 @@ def _build_user_fix_instruction(doc_type: str, missing_fields: list) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run(agent3_output: dict) -> dict:
-    print("\n[Agent 4] Document Requirement Checker — START")
+    print("\n[Agent 4] Missing Document Checker — START")
 
-    data                 = agent3_output.get("data", {})
-    checklist_result     = agent3_output.get("checklist_result", {})
-    canonical_requirements = agent3_output.get("canonical_requirements", [])
-    policy_analysis      = agent3_output.get("policy_analysis", {})
-    optional_missing     = agent3_output.get("optional_missing", [])
+    doc_requirements = agent3_output.get("document_requirements", [])
+    documents        = agent3_output.get("documents", [])
 
-    # Get Agent 1's rich content structures
-    document_content_map = data.get("document_content_map", {})
-    completeness_summary = data.get("completeness_summary", {})
-    null_fields_by_doc   = data.get("null_fields_by_doc", {})
-    field_source_map     = data.get("field_source_map", {})
+    print(f"  Document requirements to check : {len(doc_requirements)}")
+    print(f"  Submitted documents            : {len(documents)}")
 
-    # ── Step 1: Re-verify each canonical requirement with content values ───────
-    print("[Agent 4] Verifying canonical requirements against document content...")
+    if not doc_requirements:
+        print("  [Agent4] No document requirements to check — proceeding.")
+        return {
+            "can_proceed":         True,
+            "satisfied":           [],
+            "missing_documents":   [],
+            "partial_documents":   [],
+            "documents":           documents,
+            "document_requirements": doc_requirements,
+            "data":                agent3_output,
+        }
 
-    verified_present     = []
-    content_gaps         = []   # doc present but key fields are null/empty
-    truly_missing        = []   # doc type not submitted at all
+    print("[Agent 4] Calling Nova Micro — checking document requirements against submitted content...")
+    prompt   = _build_check_prompt(doc_requirements, documents)
+    messages = [{"role": "user", "content": [{"text": prompt}]}]
 
-    for req in canonical_requirements:
-        if req.get("currently_available"):
-            # Checklist said it's satisfied — verify the content is actually there
-            satisfying_docs = req.get("satisfying_docs", [req.get("document_type")])
-            found_with_content = False
+    raw = invoke(
+        model_id=MICRO_MODEL_ID,
+        messages=messages,
+        system=SYSTEM_PROMPT,
+        max_tokens=2000,
+        temperature=0.1,
+    )
 
-            for doc_type in satisfying_docs:
-                content = document_content_map.get(doc_type, {})
-                if not content:
-                    continue
+    parsed = _safe_parse(raw)
+    checks = parsed.get("checks", [])
 
-                check = _check_document_completeness(doc_type, content)
+    # Categorise results
+    satisfied  = []
+    missing    = []
+    partial    = []
 
-                if check["is_complete"] or check["completeness_score"] >= 0.5:
-                    verified_present.append({
-                        "requirement":      req["document_name"],
-                        "satisfied_by":     doc_type,
-                        "completeness":     check["completeness_score"],
-                    })
-                    found_with_content = True
-                    break
-                elif check["is_partial"]:
-                    # Present but has missing critical fields
-                    content_gaps.append({
-                        "requirement":       req["document_name"],
-                        "document_type":     doc_type,
-                        "completeness":      check["completeness_score"],
-                        "missing_fields":    check["missing_critical_fields"],
-                        "present_fields":    check["present_critical_fields"],
-                        "is_blocker":        True,
-                        "user_instruction":  _build_user_fix_instruction(
-                            doc_type, check["missing_critical_fields"]
-                        ),
-                    })
-                    found_with_content = True   # doc exists, just partial
-                    break
+    for check in checks:
+        idx    = check.get("requirement_index", 1) - 1
+        req    = doc_requirements[idx] if 0 <= idx < len(doc_requirements) else {}
+        status = check.get("status", "missing").lower()
 
-            if not found_with_content:
-                truly_missing.append({
-                    "document_name":   req["document_name"],
-                    "document_type":   req["document_type"],
-                    "info_required":   req["info_to_include"],
-                    "why_needed":      f"Required for pre-authorization step: {req['document_name']}",
-                    "satisfying_docs": req.get("satisfying_docs", []),
-                })
+        entry = {
+            "document_type":  check.get("document_type_required", req.get("document_type", "Unknown")),
+            "satisfied_by":   check.get("satisfied_by"),
+            "info_present":   check.get("info_present", ""),
+            "info_missing":   check.get("info_missing"),
+            "priority":       check.get("priority", "HIGH"),
+            "priority_reason": check.get("priority_reason", ""),
+            "purpose":        req.get("purpose", ""),
+            "info_needed":    req.get("info_needed", ""),
+        }
+
+        if status == "satisfied":
+            satisfied.append(entry)
+        elif status == "partial":
+            partial.append(entry)
         else:
-            # Checklist already flagged as not satisfied
-            # Pull the detailed message from the missing_required list
-            checklist_missing = checklist_result.get("missing_required", [])
-            msg = next(
-                (m["missing_msg"] for m in checklist_missing
-                 if m["step"] == _find_step_for_req(req, checklist_missing)),
-                f"Required document for: {req['document_name']}"
-            )
-            truly_missing.append({
-                "document_name":   req["document_name"],
-                "document_type":   req["document_type"],
-                "info_required":   req["info_to_include"],
-                "why_needed":      msg,
-                "satisfying_docs": req.get("satisfying_docs", []),
-            })
+            missing.append(entry)
 
-    # ── Step 2: Check completeness of ALL submitted documents ─────────────────
-    print("[Agent 4] Checking completeness of submitted documents...")
-    all_doc_checks = {}
+    # can_proceed = no HIGH priority items are missing or partial
+    blocking = [
+        item for item in (missing + partial)
+        if item.get("priority") == "HIGH"
+    ]
+    can_proceed = len(blocking) == 0
 
-    for doc_type, content in document_content_map.items():
-        check = _check_document_completeness(doc_type, content)
-        all_doc_checks[doc_type] = check
-        if check["missing_critical_fields"]:
-            # Only add to content_gaps if not already there
-            already_flagged = any(
-                g["document_type"] == doc_type for g in content_gaps
-            )
-            if not already_flagged and check["is_partial"]:
-                content_gaps.append({
-                    "requirement":       f"{doc_type} completeness",
-                    "document_type":     doc_type,
-                    "completeness":      check["completeness_score"],
-                    "missing_fields":    check["missing_critical_fields"],
-                    "present_fields":    check["present_critical_fields"],
-                    "is_blocker":        check["completeness_score"] < 0.5,
-                    "user_instruction":  _build_user_fix_instruction(
-                        doc_type, check["missing_critical_fields"]
-                    ),
-                })
+    # Print summary
+    print(f"\n  Results:")
+    for s in satisfied:
+        print(f"    ✅ [{s['document_type']}] — satisfied by: {s['satisfied_by']}")
+    for p in partial:
+        print(f"    ⚠️  [{p['document_type']}] — PARTIAL ({p['priority']}) missing: {p['info_missing']}")
+    for m in missing:
+        print(f"    ❌ [{m['document_type']}] — MISSING ({m['priority']})")
 
-    # Separate blocking partials from soft warnings
-    partial_blocking = [g for g in content_gaps if g.get("is_blocker")]
-    partial_soft     = [g for g in content_gaps if not g.get("is_blocker")]
-
-    # ── Step 3: Build user action list ───────────────────────────────────────
-    user_actions = []
-
-    for doc in truly_missing:
-        user_actions.append({
-            "priority":   "HIGH",
-            "item":       f"Submit: {doc['document_name']}",
-            "reason":     doc["why_needed"],
-            "document_to_update_or_provide": doc["document_type"],
-            "specific_fields_needed":        [],
-            "how_to_resolve": (
-                f"Please provide a {doc['document_type']} that contains: "
-                f"{doc['info_required']}. "
-                f"Any of these document types would satisfy this: "
-                f"{', '.join(doc['satisfying_docs'])}."
-            ),
-        })
-
-    for gap in partial_blocking:
-        user_actions.append({
-            "priority":   "HIGH",
-            "item":       f"Update: {gap['document_type']}",
-            "reason":     f"Document is incomplete — missing: {gap['missing_fields']}",
-            "document_to_update_or_provide": gap["document_type"],
-            "specific_fields_needed":        gap["missing_fields"],
-            "how_to_resolve": gap["user_instruction"],
-        })
-
-    for gap in partial_soft:
-        user_actions.append({
-            "priority":   "LOW",
-            "item":       f"Recommended: complete {gap['document_type']}",
-            "reason":     f"Some fields are empty: {gap['missing_fields']}",
-            "document_to_update_or_provide": gap["document_type"],
-            "specific_fields_needed":        gap["missing_fields"],
-            "how_to_resolve": gap["user_instruction"],
-        })
-
-    for opt in optional_missing:
-        user_actions.append({
-            "priority":   "LOW",
-            "item":       f"Optional: {opt['document_name']}",
-            "reason":     "Not required but strengthens the application",
-            "document_to_update_or_provide": opt["document_type"],
-            "specific_fields_needed":        [],
-            "how_to_resolve": opt["why_needed"],
-        })
-
-    # ── Determine can_proceed ─────────────────────────────────────────────────
-    can_proceed = len(truly_missing) == 0 and len(partial_blocking) == 0
-
-    output = {
-        "all_docs_present":       can_proceed,
-        "can_proceed":            can_proceed,
-
-        # ── Verified results ──────────────────────────────────────────────
-        "verified_present":       verified_present,
-        "missing_docs":           truly_missing,
-        "partial_docs_blocking":  partial_blocking,
-        "partial_docs_soft":      partial_soft,
-        "document_completeness":  all_doc_checks,
-
-        # ── User actions ──────────────────────────────────────────────────
-        "user_action_required":   user_actions,
-        "blockers":               [
-            {"blocker": u["reason"], "document_needed": u["document_to_update_or_provide"],
-             "action_for_user": u["how_to_resolve"]}
-            for u in user_actions if u["priority"] == "HIGH"
-        ],
-
-        # ── Pass-through ──────────────────────────────────────────────────
-        "available_inventory":    document_content_map,
-        "field_source_map":       field_source_map,
-        "missing_information":    [],
-        "data":                   data,
-    }
-
-    # ── Print summary ─────────────────────────────────────────────────────────
-    print(f"  Can proceed              : {can_proceed}")
-    print(f"  Verified present         : {len(verified_present)}")
-    print(f"  Truly missing            : {len(truly_missing)}")
-    print(f"  Partial (blocking)       : {len(partial_blocking)}")
-    print(f"  Partial (soft)           : {len(partial_soft)}")
-
+    print(f"\n  Can proceed : {can_proceed}")
     if not can_proceed:
+        print(f"  Blockers    : {len(blocking)} HIGH priority item(s) missing/incomplete")
         print("\n" + "!" * 70)
         print("  ACTION REQUIRED — Cannot proceed with submission")
         print("!" * 70)
-
-        if truly_missing:
-            print("\n  📋 MISSING DOCUMENTS:")
-            for doc in truly_missing:
-                print(f"\n    ▸ [{doc['document_type']}] {doc['document_name']}")
-                print(f"      Must contain : {doc['info_required']}")
-                print(f"      Why needed   : {doc['why_needed'][:80]}")
-                if doc.get("satisfying_docs"):
-                    print(f"      Can be in any of: {doc['satisfying_docs']}")
-
-        if partial_blocking:
-            print("\n  ✏️  INCOMPLETE DOCUMENTS (blocking):")
-            for p in partial_blocking:
-                score_pct = int(p.get("completeness", 0) * 100)
-                print(f"\n    ▸ {p['document_type']}  ({score_pct}% complete)")
-                print(f"      Missing      : {p['missing_fields']}")
-                print(f"      Action       : {p['user_instruction']}")
-
+        for item in blocking:
+            print(f"\n  🔴 {item['document_type']}  [{item['priority']}]")
+            print(f"     Purpose      : {item['purpose']}")
+            print(f"     Info needed  : {item['info_needed']}")
+            if item.get("info_missing"):
+                print(f"     Still missing: {item['info_missing']}")
         print("!" * 70)
 
-    elif partial_soft:
-        print("\n  ⚠️  Soft warnings (non-blocking):")
-        for p in partial_soft:
-            print(f"    • {p['document_type']} — missing: {p['missing_fields']}")
+    output = {
+        "can_proceed":            can_proceed,
+        "satisfied":              satisfied,
+        "missing_documents":      missing,
+        "partial_documents":      partial,
+        # Pass-through for downstream agents
+        "documents":              documents,
+        "document_requirements":  doc_requirements,
+        "data":                   agent3_output,
+    }
 
-    print("[Agent 4] Document Requirement Checker — DONE\n")
+    print("[Agent 4] Missing Document Checker — DONE\n")
     return output
 
 
-def _find_step_for_req(req: dict, missing_list: list) -> str:
-    """Helper to match a canonical req to a checklist step."""
-    name = req.get("document_name", "").lower()
-    for m in missing_list:
-        if m.get("label", "").lower() in name or name in m.get("label", "").lower():
-            return m.get("step", "")
-    return ""
+# ─────────────────────────────────────────────────────────────────────────────
+# Standalone test
+# ─────────────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    mock_input = {
+        "authorization_required": True,
+        "procedure_identified": "MRI Lumbar Spine Without Contrast",
+        "document_requirements": [
+            {
+                "document_type": "Doctor's Clinical Notes",
+                "purpose": "Establish medical necessity for the procedure",
+                "info_needed": "Diagnosis (ICD-10), clinical findings, symptom duration, prior treatments tried, CPT code for requested procedure",
+            },
+            {
+                "document_type": "Insurance Card",
+                "purpose": "Identify the correct insurance policy",
+                "info_needed": "Insurer name, policy number, member ID, group number",
+            },
+            {
+                "document_type": "Pretreatment Cost Estimate",
+                "purpose": "Document expected costs for the procedure",
+                "info_needed": "Itemized cost breakdown with CPT codes and total estimated cost",
+            },
+        ],
+        "medical_requirements": [],
+        "policy_search_fields": {"insurer_name": "BlueCross BlueShield"},
+        "documents": [
+            {
+                "document_type": "Doctor's Clinical Notes",
+                "content": (
+                    "Dr. Sarah Jenkins notes. Patient John R. Doe, lumbar radiculopathy M54.16. "
+                    "Symptoms 7 weeks. Tried NSAIDs 4 weeks and PT 3 weeks. Requesting MRI CPT 72148."
+                ),
+            },
+            {
+                "document_type": "Insurance Card",
+                "content": "BlueCross BlueShield PPO. Member: John R. Doe. ID: BCBS-9900122. Policy: BCBS-99001122.",
+            },
+        ],
+    }
+    result = run(mock_input)
+    print(json.dumps(
+        {k: v for k, v in result.items() if k not in ("documents", "data")},
+        indent=2
+    ))

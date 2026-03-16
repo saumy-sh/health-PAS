@@ -1,21 +1,32 @@
 """
-orchestrator.py  (UPDATED — v2.1)
-──────────────────────────────────
+orchestrator.py  (v3.0 — Redesigned Pipeline)
+───────────────────────────────────────────────
 Pre-Authorization Pipeline Orchestrator
-Runs all agents in sequence, passing outputs between them.
 
-Changes from v2.0:
-  • Agent 1  — two-pass extraction, JSON repair, completeness scoring
-  • Agent 3  — deterministic checklist + narrowed LLM (no hallucinated requirements)
-  • Agent 4  — uses canonical_requirements from checklist, not LLM-generated list
-  • Agent 5  — programmatic clinical checks (step therapy, symptom duration, etc.)
-  • Agent 6  — generates structured JSON + text form (unchanged)
-  • Agent 6b — REPLACED: now fills the EWA Pre-Auth PDF form (6 pages) using
-               agent6_form_filler.py + fields_template.json with exact PDF
-               coordinate mapping. Outputs a submission-ready filled PDF.
-               Non-blocking: pipeline continues if the blank form PDF is missing.
-  • Halt messages now show precise user instructions (priority-sorted)
-  • x_ray / imaging documents supported in DOC_PATHS
+Pipeline redesign (v3.0):
+  • Agent 1  — Free-form document describer
+               Returns: { documents: [{document_type, content (prose)}, ...] }
+
+  • Agent 2  — Policy search info extractor
+               Uses Agent 1 prose → extracts structured fields for policy lookup
+               Returns: { ready, policy_search_fields, documents }
+
+  • Agent 3  — Policy retrieval + requirement generator
+               Looks up policy, identifies procedure, generates two requirement lists:
+                 document_requirements  — what docs must be submitted + what info they need
+                 medical_requirements   — clinical conditions that must be met
+               Returns: { document_requirements, medical_requirements, policy_search_fields, documents }
+
+  • Agent 4  — Missing document checker (LLM-driven)
+               Compares document prose against document_requirements
+               Returns: { can_proceed, missing_documents, partial_documents }
+
+  • Agent 5  — Medical requirements checker + approval probability
+               Checks medical_requirements against document prose
+               Returns: { approval_probability, determination, requirements_checked }
+
+  • Agent 6  — EWA Pre-Auth PDF Form Filler
+               Fills the 6-page EWA form using policy_search_fields from Agent 2
 
 Usage:
     python orchestrator.py
@@ -33,21 +44,17 @@ import agent2_policy_checker         as agent2
 import agent3_policy_retrieval       as agent3
 import agent4_document_checker       as agent4
 import agent5_eligibility_reasoning  as agent5
-import agent6_form_generator         as agent6      # JSON/text form (internal use)
-import agent6_form_filler            as agent6b     # EWA PDF form filler
-
-
-
+import agent6_form_filler            as agent6
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Document paths — update these to match your file locations
-# Add or remove entries freely; Agent 1 auto-classifies every file.
+# Agent 1 auto-classifies every file from its content alone.
 # ─────────────────────────────────────────────────────────────────────────────
 
 DOC_PATHS = {
     "lab_report":            "./data/patient_data/lab_report_ai.png",
-    "doctor_notes":          "./data/patient_data/doctor_notes_ai.png",
+    "doctor_notes":          "./data/patient_data/doctors_notes_2weeks.png",
     "patient_info":          "./data/patient_data/patient_ai.png",
     "insurance_card":        "./data/patient_data/insurance_card_ai.png",
     "pretreatment_estimate": "./data/patient_data/medical_pretreatment_estimate_ai.pdf",
@@ -57,12 +64,9 @@ DOC_PATHS = {
 }
 
 # ── EWA Pre-Auth PDF form paths ────────────────────────────────────────────────
-# Blank 6-page EWA form that Agent 6b will fill
-EWA_FORM_PDF      = "./data/forms/Pre-Auth Form EWA.pdf"
-# Pre-mapped field coordinates (PDF coordinate space, 53 fields across 6 pages)
-EWA_FIELDS_JSON   = "./data/forms/fields_template.json"
-
-OUTPUT_DIR = "./output"
+EWA_FORM_PDF    = "./data/forms/Pre-Auth Form EWA.pdf"
+EWA_FIELDS_JSON = "./data/forms/fields_template.json"
+OUTPUT_DIR      = "./output"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +76,7 @@ OUTPUT_DIR = "./output"
 def _print_stage(stage, name: str, status: str = "RUNNING"):
     icons  = {"RUNNING": "🔄", "DONE": "✅", "SKIP": "⏭", "WARN": "⚠️", "FAIL": "❌"}
     icon   = icons.get(status, "•")
-    label  = f"STAGE {stage}" if isinstance(stage, int) else f"STAGE {stage}"
+    label  = f"STAGE {stage}"
     print(f"\n{'='*70}")
     print(f"  {icon}  {label} — {name}  [{status}]")
     print(f"{'='*70}")
@@ -91,11 +95,7 @@ def _print_halt(reason: str, details: list = None):
 def _safe_serialize(obj):
     """Make pipeline results JSON-serializable."""
     if isinstance(obj, dict):
-        return {
-            k: _safe_serialize(v)
-            for k, v in obj.items()
-            if k not in ("_raw",)
-        }
+        return {k: _safe_serialize(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_safe_serialize(i) for i in obj]
     try:
@@ -116,7 +116,7 @@ def run_pipeline(
     ewa_fields_json: str = EWA_FIELDS_JSON,
 ) -> dict:
     """
-    Run the complete pre-authorization pipeline.
+    Run the complete pre-authorization pipeline (v3.0).
 
     Parameters
     ----------
@@ -137,24 +137,23 @@ def run_pipeline(
     results    = {}
 
     print("\n" + "#" * 70)
-    print("  🏥  PRE-AUTHORIZATION PIPELINE  —  START  (v2.1)")
+    print("  🏥  PRE-AUTHORIZATION PIPELINE  —  START  (v3.0)")
     print(f"  Started : {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Docs    : {len(doc_paths)} files")
     print(f"  Output  : {output_dir}")
-    print(f"  EWA PDF : {ewa_form_pdf}")
     print("#" * 70)
 
     # ══════════════════════════════════════════════════════════════════════════
     # STAGE 1 — Document Intelligence
-    #   Two-pass extraction: core fields (4096 tokens) + per-doc detail (1500)
-    #   Produces: documents[], document_content_map, field_source_map,
-    #             completeness_summary, null_fields_by_doc
+    #   Reads every submitted document and produces a free-form prose description.
+    #   Works for any document type including X-rays, scans, photos, PDFs.
+    #   Output: { documents: [{document_type, content}, ...] }
     # ══════════════════════════════════════════════════════════════════════════
     _print_stage(1, "Document Intelligence")
     try:
         a1 = agent1.run(doc_paths)
     except Exception as e:
-        _print_halt("Document extraction failed", [f"Error: {e}"])
+        _print_halt("Document intelligence failed", [f"Error: {e}"])
         results["pipeline_status"] = "HALTED_EXTRACTION_FAILED"
         results["error"]           = str(e)
         results["halted_at"]       = "agent1"
@@ -164,240 +163,163 @@ def run_pipeline(
     _print_stage(1, "Document Intelligence", "DONE")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STAGE 2 — Policy Query Sanity Check
-    #   Validates extracted fields for completeness before policy lookup.
-    #   Halts if critical fields (patient, insurer, CPT, ICD-10) are absent.
+    # STAGE 2 — Policy Search Info Extractor
+    #   Reads the prose document summaries and extracts the structured fields
+    #   needed to identify the correct insurance policy:
+    #     patient name/DOB, insurer, policy number, member ID, group number.
+    #   Output: { ready, policy_search_fields, documents }
     # ══════════════════════════════════════════════════════════════════════════
-    _print_stage(2, "Policy Query Requirement Checker")
+    _print_stage(2, "Policy Search Info Extractor")
     a2 = agent2.run(a1)
     results["agent2"] = a2
-    _print_stage(2, "Policy Query Requirement Checker", "DONE")
+    _print_stage(2, "Policy Search Info Extractor", "DONE")
 
     if not a2.get("ready"):
-        missing = a2.get("missing_required", [])
+        missing = a2.get("missing_critical", [])
         _print_halt(
-            "Stage 2 — Critical fields missing from extracted documents",
-            [f"  • {m['field']} → expected in: {m.get('suggested_document', 'unknown')}"
-             for m in missing],
+            "Stage 2 — Cannot identify insurance policy from submitted documents",
+            [f"  • Missing: {m}" for m in missing],
         )
-        results["pipeline_status"] = "HALTED_MISSING_FIELDS"
-        results["missing_fields"]  = missing
-        results["halted_at"]       = "agent2"
+        results["pipeline_status"] = "HALTED_POLICY_NOT_IDENTIFIABLE"
+        results["missing_critical"] = missing
+        results["halted_at"]        = "agent2"
         return results
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STAGE 3 — Policy Retrieval (Deterministic Checklist + LLM Criteria)
-    #
-    #   RELIABILITY FIX: Agent 3 no longer lets the LLM freely invent
-    #   required document lists. Instead:
-    #     ① A hardcoded PREAUTH_CHECKLIST evaluates the 7 pre-auth steps
-    #        deterministically against confirmed-present document types.
-    #        Same input → same result, every run.
-    #     ② The LLM is called ONLY to assess clinical criteria (symptom
-    #        duration, step therapy, etc.) — not to generate doc requirements.
-    #     ③ Output includes `canonical_requirements` (the deterministic list)
-    #        which Agent 4 uses as its sole source of truth.
+    # STAGE 3 — Policy Retrieval + Requirement Generator
+    #   Given the policy search fields, identifies what procedure/treatment
+    #   requires pre-authorization and enumerates TWO requirement lists:
+    #     document_requirements — what documents must be submitted + what info each needs
+    #     medical_requirements  — clinical conditions to be met (step therapy, etc.)
+    #   Does NOT check whether requirements are fulfilled.
+    #   Output: { document_requirements, medical_requirements, procedure_identified, ... }
     # ══════════════════════════════════════════════════════════════════════════
-    _print_stage(3, "Policy Retrieval (Deterministic Checklist + Clinical Criteria)")
+    _print_stage(3, "Policy Retrieval + Requirement Generator")
     a3 = agent3.run(a2)
     results["agent3"] = a3
-    _print_stage(3, "Policy Retrieval", "DONE")
+    _print_stage(3, "Policy Retrieval + Requirement Generator", "DONE")
+
+    if not a3.get("authorization_required", True):
+        print("\n  ℹ️  No pre-authorization required for this procedure.")
+        results["pipeline_status"] = "COMPLETE_NO_AUTH_REQUIRED"
+        results["note"]            = "Pre-authorization not required for this procedure."
+        return results
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STAGE 4 — Document Requirement Checker
-    #
-    #   RELIABILITY FIX: Agent 4 now reads from `canonical_requirements`
-    #   (deterministic checklist result from Agent 3), NOT from the LLM's
-    #   `required_documents` list.
-    #
-    #   It re-verifies each requirement against FULL document content values
-    #   (not just field names) to catch partial documents.
-    #   The halt decision is 100% programmatic — no LLM involved.
+    # STAGE 4 — Missing Document Checker
+    #   Compares the submitted document prose summaries (from Agent 1) against
+    #   the document_requirements from Agent 3.
+    #   LLM-driven: determines which requirements are satisfied, partially met,
+    #   or missing entirely. Assigns HIGH/LOW priority to each gap.
+    #   Output: { can_proceed, satisfied, missing_documents, partial_documents }
     # ══════════════════════════════════════════════════════════════════════════
-    _print_stage(4, "Document Requirement Checker")
-
-    # Pass a3 directly — it already contains everything Agent 4 needs:
-    # canonical_requirements, checklist_result, policy_analysis, and data
+    _print_stage(4, "Missing Document Checker")
     a4 = agent4.run(a3)
 
     if not a4.get("can_proceed", True):
-        # Build a clear, prioritised action list for the user
-        high_actions = [
-            u for u in a4.get("user_action_required", [])
-            if u.get("priority") == "HIGH"
-        ]
-        detail_lines = []
-        for action in high_actions:
-            detail_lines.append(f"\n  🔴 {action['item']}")
-            detail_lines.append(f"     Reason : {action['reason']}")
-            if action.get("specific_fields_needed"):
-                detail_lines.append(f"     Fields : {action['specific_fields_needed']}")
-            detail_lines.append(f"     Fix    : {action['how_to_resolve']}")
+        high_missing  = [m for m in a4.get("missing_documents", [])  if m.get("priority") == "HIGH"]
+        high_partial  = [p for p in a4.get("partial_documents", [])  if p.get("priority") == "HIGH"]
+        detail_lines  = []
+
+        for item in high_missing:
+            detail_lines.append(f"\n  🔴 MISSING: {item['document_type']}")
+            detail_lines.append(f"     Purpose    : {item.get('purpose', '')}")
+            detail_lines.append(f"     Info needed: {item.get('info_needed', '')}")
+
+        for item in high_partial:
+            detail_lines.append(f"\n  🟡 INCOMPLETE: {item['document_type']}")
+            detail_lines.append(f"     Still missing: {item.get('info_missing', '')}")
 
         _print_halt("Stage 4 — Missing or incomplete required documents", detail_lines)
         results["pipeline_status"] = "HALTED_MISSING_DOCUMENTS"
-        results["missing_docs"]    = a4.get("missing_docs", [])
-        results["user_actions"]    = a4.get("user_action_required", [])
+        results["missing_docs"]    = a4.get("missing_documents", [])
+        results["partial_docs"]    = a4.get("partial_documents", [])
         results["halted_at"]       = "agent4"
         return results
 
     results["agent4"] = a4
-    _print_stage(4, "Document Requirement Checker", "DONE")
+    _print_stage(4, "Missing Document Checker", "DONE")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STAGE 5 — Clinical Requirements + Eligibility Reasoning
-    #
-    #   Runs programmatic clinical checks FIRST:
-    #     • Minimum symptom duration (procedure-specific thresholds)
-    #     • Step therapy / medication trial compliance
-    #     • Specialist referral presence
-    #     • Clinical examination documentation
-    #   Then calls LLM for full eligibility determination.
-    #   If programmatic checks find critical failures, the LLM determination
-    #   is overridden to PENDING_REVIEW (LLM cannot silently approve).
+    # STAGE 5 — Medical Requirements Checker + Approval Probability
+    #   Checks medical_requirements from Agent 3 against the document prose.
+    #   Each requirement is assessed as met / partial / not_met with evidence.
+    #   Computes an approval_probability (0.0–1.0) and a determination.
+    #   Output: { approval_probability, determination, requirements_checked }
     # ══════════════════════════════════════════════════════════════════════════
-    _print_stage(5, "Clinical Requirements + Eligibility Reasoning")
-
-    # Merge policy_analysis from Agent 3 into Agent 4 output for Agent 5
-    a4_enriched = dict(a4)
-    a4_enriched["policy_analysis"] = a3.get("policy_analysis", {})
-
-    a5 = agent5.run(a4_enriched)
+    _print_stage(5, "Medical Requirements + Approval Probability")
+    a5 = agent5.run(a4)
     results["agent5"] = a5
-    _print_stage(5, "Clinical Requirements + Eligibility Reasoning", "DONE")
-
-    # Warn if clinical requirements are not fully met but continue
-    if a5.get("requirements_not_met"):
-        print("\n  ⚠️  Some clinical requirements are not fully met:")
-        for req in a5.get("requirements_not_met", []):
-            print(f"    ✗ {req.get('requirement')}")
-            if req.get("action_needed"):
-                print(f"      → {req.get('action_needed')}")
-        print()
+    _print_stage(5, "Medical Requirements + Approval Probability", "DONE")
 
     # ══════════════════════════════════════════════════════════════════════════
-    # STAGE 6 — Prior Authorization Form Generator
-    #   Generates structured JSON + formatted text form from extracted data.
-    #   NOTE: If agent6_form_generator attempts to save a PDF via reportlab
-    #   and fails (known BytesIO issue on Windows), we catch the error and
-    #   continue — the EWA PDF in Stage 6b is the primary submission document.
+    # STAGE 6 — EWA Pre-Auth PDF Form Filler
+    #   Fills the 6-page EWA pre-auth form with all collected data.
+    #   Non-blocking: continues if blank EWA PDF is not found.
     # ══════════════════════════════════════════════════════════════════════════
-    _print_stage(6, "Prior Authorization Form Generator")
-    try:
-        a6 = agent6.run(a5, output_dir=output_dir)
-    except TypeError as e:
-        # Catch the reportlab BytesIO bug: "expected str, bytes or os.PathLike, not BytesIO"
-        # This happens in _save_as_pdf → c.drawImage(buf, ...) on Windows.
-        # Fix in agent6_form_generator.py: replace  c.drawImage(buf, ...)
-        #                                  with     c.drawImage(ImageReader(buf), ...)
-        # where ImageReader is from: from reportlab.lib.utils import ImageReader
-        print(f"  ⚠️  agent6 PDF save failed (reportlab BytesIO bug): {e}")
-        print("  Continuing — JSON/text form may still be available; EWA PDF (Stage 6b) is unaffected.")
-        # Try to get whatever was saved before the crash
-        a6 = getattr(agent6, "_last_output", {
-            "form_json":      {},
-            "form_text":      "",
-            "form_json_path": None,
-            "form_txt_path":  None,
-            "data":           a5.get("data", {}),
-            "eligibility":    {},
-        })
-    results["agent6"] = a6
-    _print_stage(6, "Prior Authorization Form Generator", "DONE")
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # STAGE 6b — EWA Pre-Auth PDF Form Filler
-    #
-    #   Fills the 6-page "Request for Cashless Hospitalisation" EWA form
-    #   (PreAuth_Form_EWA.pdf) using:
-    #     ① fields_template.json — 53 pre-mapped field positions in PDF
-    #        coordinate space (exact, validated with check_bounding_boxes.py)
-    #     ② _build_placeholder_map() — maps all pipeline data to {{placeholders}}
-    #     ③ fill_pdf_form_with_annotations.py — overlays text annotations
-    #
-    #   Fills across all 6 pages:
-    #     Page 1 — TPA/hospital details + patient demographics
-    #     Page 2 — Treating doctor + clinical findings + ICD-10 + treatment type
-    #     Page 3 — Admission details + cost breakdown
-    #     Page 4 — Doctor declaration + registration
-    #     Page 5 — Patient declaration + date
-    #     Page 6 — Hospital declaration (no fillable fields)
-    #
-    #   Non-blocking: if the blank EWA PDF is missing, pipeline continues
-    #   with the JSON/text form from Stage 6 only.
-    # ══════════════════════════════════════════════════════════════════════════
-    _print_stage("6b", "EWA Pre-Auth PDF Form Filler")
-    a6b = {}
+    _print_stage("6", "EWA Pre-Auth PDF Form Filler")
+    a6 = {}
     ewa_pdf_path = Path(ewa_form_pdf)
 
     if not ewa_pdf_path.exists():
         print(f"  ⚠️  EWA form PDF not found at: {ewa_form_pdf}")
-        print(f"  Place PreAuth_Form_EWA.pdf at that path to enable PDF filling.")
-        print(f"  Continuing with JSON/text form from Stage 6 only.")
-        results["agent6b"] = {"skipped": True, "reason": f"EWA form not found: {ewa_form_pdf}"}
-        _print_stage("6b", "EWA Pre-Auth PDF Form Filler", "SKIP")
+        print(f"  Place Pre-Auth Form EWA.pdf at that path to enable PDF filling.")
+        print(f"  Continuing without PDF form.")
+        results["agent6"] = {"skipped": True, "reason": f"EWA form not found: {ewa_form_pdf}"}
+        _print_stage("6", "EWA Pre-Auth PDF Form Filler", "SKIP")
 
     elif not Path(ewa_fields_json).exists():
         print(f"  ⚠️  Fields template not found at: {ewa_fields_json}")
-        print(f"  Place fields_template.json at that path to enable PDF filling.")
-        print(f"  Continuing with JSON/text form from Stage 6 only.")
-        results["agent6b"] = {"skipped": True, "reason": f"Fields template not found: {ewa_fields_json}"}
-        _print_stage("6b", "EWA Pre-Auth PDF Form Filler", "SKIP")
+        results["agent6"] = {"skipped": True, "reason": f"Fields template not found: {ewa_fields_json}"}
+        _print_stage("6", "EWA Pre-Auth PDF Form Filler", "SKIP")
 
     else:
         try:
-            a6b = agent6b.run(
+            a6 = agent6.run(
                 agent5_output=a5,
                 output_dir=output_dir,
                 form_pdf_path=str(ewa_pdf_path),
                 fields_template_path=ewa_fields_json,
             )
-            results["agent6b"] = a6b
-            if a6b.get("filled_pdf_path"):
-                _print_stage("6b", "EWA Pre-Auth PDF Form Filler", "DONE")
+            results["agent6"] = a6
+            if a6.get("filled_pdf_path"):
+                _print_stage("6", "EWA Pre-Auth PDF Form Filler", "DONE")
             else:
-                print(f"  ⚠️  PDF filling completed but no output path returned.")
-                _print_stage("6b", "EWA Pre-Auth PDF Form Filler", "WARN")
+                _print_stage("6", "EWA Pre-Auth PDF Form Filler", "WARN")
         except Exception as e:
             print(f"  ⚠️  EWA PDF form filling failed: {e}")
-            print("  Continuing with JSON/text form from Stage 6 only.")
-            results["agent6b"] = {"error": str(e), "filled_pdf_path": None}
-            _print_stage("6b", "EWA Pre-Auth PDF Form Filler", "WARN")
+            results["agent6"] = {"error": str(e), "filled_pdf_path": None}
+            _print_stage("6", "EWA Pre-Auth PDF Form Filler", "WARN")
 
-    
     # ══════════════════════════════════════════════════════════════════════════
     # Final summary
     # ══════════════════════════════════════════════════════════════════════════
     elapsed = (datetime.now() - start_time).total_seconds()
-
     results["pipeline_status"] = "COMPLETE"
-    
     results["elapsed_seconds"] = elapsed
 
-    filled_pdf    = a6b.get("filled_pdf_path") if a6b else None
-    fields_filled = a6b.get("fields_filled", 0) if a6b else 0
+    psf        = a2.get("policy_search_fields", {})
+    filled_pdf = a6.get("filled_pdf_path") if a6 else None
 
     print("\n" + "#" * 70)
-    print("  🏥  PRE-AUTHORIZATION PIPELINE  —  COMPLETE  (v2.1)")
+    print("  🏥  PRE-AUTHORIZATION PIPELINE  —  COMPLETE  (v3.0)")
     print("#" * 70)
-    print(f"\n  Patient             : {a1.get('patient_name')}")
-    print(f"  DOB                 : {a1.get('patient_dob')}")
-    print(f"  Insurer             : {a1.get('insurer')}  |  Member: {a1.get('member_id')}")
-    print(f"  Diagnosis           : {a1.get('diagnosis')} ({a1.get('icd10')})")
-    print(f"  Procedure           : {a1.get('procedure')} (CPT {a1.get('cpt')})")
-    print(f"  Eligibility         : {a5.get('determination')}  "
-          f"(confidence: {a5.get('confidence')})")
-    print(f"  Clinical compliance : {a5.get('overall_clinical_compliance', 'N/A')}")
-    print(f"  Checklist           : "
-          f"{a3.get('checklist_result', {}).get('satisfied_count', '?')}/"
-          f"{a3.get('checklist_result', {}).get('total_required', '?')} steps satisfied")
-    print(f"     JSON form  : {a6.get('form_json_path', 'N/A')}")
-    print(f"     Text form  : {a6.get('form_txt_path', 'N/A')}")
+    print(f"\n  Patient             : {psf.get('patient_name')}  DOB: {psf.get('patient_dob')}")
+    print(f"  Insurer             : {psf.get('insurer_name')}  |  Member: {psf.get('member_id')}")
+    print(f"  Policy number       : {psf.get('policy_number')}  Group: {psf.get('group_number')}")
+    print(f"  Diagnosis           : {psf.get('diagnosis')}")
+    print(f"  Procedure           : {a3.get('procedure_identified')}")
+    print(f"  Approval probability: {a5.get('approval_probability', 0):.0%}")
+    print(f"  Determination       : {a5.get('determination')}")
+    print(f"  Documents checked   : {len(a4.get('satisfied', []))} satisfied / "
+          f"{len(a4.get('missing_documents', []))} missing / "
+          f"{len(a4.get('partial_documents', []))} partial")
+    print(f"  Medical reqs met    : {len(a5.get('requirements_met', []))} | "
+          f"not met: {len(a5.get('requirements_not_met', []))}")
     if filled_pdf:
-        print(f"     EWA PDF    : {filled_pdf}  ({fields_filled} fields filled)")
+        print(f"  EWA PDF             : {filled_pdf}")
     else:
-        print(f"     EWA PDF    : not generated (check Stage 6b warnings above)")
-    
+        print(f"  EWA PDF             : not generated (check Stage 6 above)")
     print(f"\n  ⏱  Total time       : {elapsed:.1f} seconds")
     print("#" * 70 + "\n")
 
